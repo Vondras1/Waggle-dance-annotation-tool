@@ -5,19 +5,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent
 STATIC = ROOT / "static"
-SESSION_NAME = "session_02"
+# SESSION_NAME = "session_02"
+SESSION_NAME = "example_dataset"
 CLIPS_DIR_CANDIDATES = (
+    REPO / "annotation_tool" / "guide" / SESSION_NAME / "run_clips",
     REPO / "outputs" / SESSION_NAME / "run_clips",
     REPO / "candidate_run_detector/outputs" / SESSION_NAME / "run_clips",
     REPO / "dance_decoder/candidate_run_detector/outputs" / SESSION_NAME / "run_clips",
 )
-DEFAULT_CLIPS_DIR = CLIPS_DIR_CANDIDATES[1]
+DEFAULT_CLIPS_DIR = CLIPS_DIR_CANDIDATES[0]
 ANNOTATIONS_DIR_NAME = "annotations"
 MASTER_FILENAME = "master.json"
 DETECTOR_DIR = REPO / "dance_decoder/candidate_run_detector"
 ROSBAG_READER_PATH = DETECTOR_DIR / "rosbag_io.py"
 IMAGE_TOPIC = "/dancinghive/image/compressed"
 CAMERA_INFO_TOPIC = "/dancinghive/camera_info"
+
 
 SERVER_HOST = "127.0.0.1"
 ALLOWED_HOSTS = ("localhost", SERVER_HOST)

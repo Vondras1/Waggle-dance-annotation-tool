@@ -23,8 +23,10 @@ python -m annotation_tool
 ```
 
 Open [http://localhost:8765](http://localhost:8765). The server listens only on
-your computer. If it cannot find the default clips folder, choose a source and
-save folder in the opening dialog. You can reopen it with **Folders** located in the top bar.
+your computer. An example dataset is loaded by default so you can try out the
+tool. When you are ready to use your own data, click **Folders** in the top bar
+to change the source and save folders. If the default clips folder cannot be
+found, choose these folders in the opening dialog.
 
 ![Choose clip and annotation folders](guide/choose_paths.png)
 
@@ -88,4 +90,3 @@ export keyframes only, or use a frame stride from the export dialog.
 
 Boxes use crop coordinates in the editor. The master file also stores matching
 undistorted full-image coordinates and source/output timestamps.
-
