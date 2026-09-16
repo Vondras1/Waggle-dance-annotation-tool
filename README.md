@@ -14,7 +14,7 @@ install the dependency:
 ```bash
 conda create -n dance-annotation
 conda activate dance-annotation
-pip install opencv-python
+conda install -c conda-forge opencv
 ```
 
 Now start the tool:
