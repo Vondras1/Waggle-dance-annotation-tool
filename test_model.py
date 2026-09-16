@@ -172,6 +172,30 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(result["run_000001"]["metadata"], metadata())
         self.assertEqual(result["run_000001"]["video_path"], self.root / "run_000001.mp4")
 
+    def test_mixed_metadata_versions_discovered_and_preserved_on_save(self):
+        self.write_clip()
+        v2 = metadata()
+        v2.update(schema_version=2, video_file="run_000002.mp4", codec="h264",
+                  fourcc="avc1", pixel_format="yuv420p", lossless=False, crf=18)
+        self.write_clip("run_000002", v2)
+        clips = discover_clips(self.root)
+        self.assertEqual(set(clips), {"run_000001", "run_000002"})
+        path = self.root / "annotations" / "master.json"
+        store = MasterStore(path, clips)
+        store.save_run("run_000002", accepted(), expected_revision=0)
+        restored = MasterStore(path, clips).get_master()
+        self.assertEqual(restored["clips"]["run_000001"]["metadata"], metadata())
+        self.assertEqual(restored["clips"]["run_000002"]["metadata"], v2)
+        self.assertEqual(len(restored["clips"]["run_000002"]["frames"]), 5)
+
+    def test_unsupported_metadata_versions_rejected(self):
+        for version in (None, True, 1.0, "2", 0, 3):
+            with self.subTest(version=version):
+                invalid = metadata()
+                invalid["schema_version"] = version
+                with self.assertRaisesRegex(ValueError, "Unsupported clip metadata schema_version"):
+                    validate_metadata(invalid)
+
     def test_bad_json_bad_times_and_path_escape_are_warned(self):
         self.write_clip()
         (self.root / "bad.json").write_text("{")

@@ -21,7 +21,7 @@ import uuid
 
 
 from .config import (
-    SCHEMA_VERSION, MASTER_SCHEMA_VERSION, COORDINATE_SPACE, YOLO_CLASS_ID,
+    SUPPORTED_CLIP_SCHEMA_VERSIONS, MASTER_SCHEMA_VERSION, COORDINATE_SPACE, YOLO_CLASS_ID,
     LEGACY_ANGLE_CONVENTION, ANGLE_CONVENTION, STATUSES,
 )
 
@@ -66,7 +66,10 @@ def validate_metadata(metadata):
     """Validate the mapping needed to annotate a clip, preserving all metadata."""
     if not isinstance(metadata, dict):
         raise ValueError("Clip metadata must be an object")
-    if type(metadata.get("schema_version")) is not int or metadata["schema_version"] != SCHEMA_VERSION:
+    # Both versions use the same geometry and frame-time mapping; preserve the
+    # v2 encoding metadata along with the original schema version.
+    if (type(metadata.get("schema_version")) is not int
+            or metadata["schema_version"] not in SUPPORTED_CLIP_SCHEMA_VERSIONS):
         raise ValueError("Unsupported clip metadata schema_version")
     width = _integer(metadata.get("width"), "width", 1)
     height = _integer(metadata.get("height"), "height", 1)

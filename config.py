@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent
 STATIC = ROOT / "static"
-# SESSION_NAME = "session_02"
+# SESSION_NAME = "session_0"
 SESSION_NAME = "example_dataset"
 CLIPS_DIR_CANDIDATES = (
     REPO / "annotation_tool" / "guide" / SESSION_NAME / "run_clips",
@@ -13,6 +13,7 @@ CLIPS_DIR_CANDIDATES = (
     REPO / "candidate_run_detector/outputs" / SESSION_NAME / "run_clips",
     REPO / "dance_decoder/candidate_run_detector/outputs" / SESSION_NAME / "run_clips",
 )
+# DEFAULT_CLIPS_DIR = CLIPS_DIR_CANDIDATES[3]
 DEFAULT_CLIPS_DIR = CLIPS_DIR_CANDIDATES[0]
 ANNOTATIONS_DIR_NAME = "annotations"
 MASTER_FILENAME = "master.json"
@@ -34,7 +35,7 @@ MAX_REQUEST_BYTES = 8 * 1024 * 1024
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 
 # File-format constants: changing these requires matching migration/client changes.
-SCHEMA_VERSION = 1
+SUPPORTED_CLIP_SCHEMA_VERSIONS = (1, 2)
 MASTER_SCHEMA_VERSION = 4
 COORDINATE_SPACE = {
     "bbox_clip": "clip pixels; [x_min, y_min, x_max, y_max]; max bounds exclusive",
@@ -104,4 +105,3 @@ This export does not create a train/validation split. Split by recording or danc
 not adjacent frames or overlapping crops, to avoid near-duplicate data leakage.
 Repeated source timestamps represent camera frames repeated by the clip exporter.
 """
-
