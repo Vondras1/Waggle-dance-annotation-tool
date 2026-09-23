@@ -88,6 +88,11 @@ function covered(a) {
   while (last >= first && excluded.has(last)) last--;
   return first <= last && keys.length > 0 && keys[0].frame <= first && keys[keys.length - 1].frame >= last;
 }
+function requireRunDirection(a) {
+  if (!Number.isFinite(a.direction_deg)) {
+    throw new Error("This run is marked as dancing. Set the run direction angle before moving to another run.");
+  }
+}
 function edited(mutator) {
   if (!state.draft) return;
   const before = clone(state.draft);
@@ -427,6 +432,7 @@ function selectRun(id) {
     if (requested === state.id) { renderRunSelector(true); return; }
     runTransition(true);
     try {
+      if (state.id && state.draft?.status === "accepted") requireRunDirection(state.draft);
       await saveRun();
       const target = state.project.clips.find(c => c.id === requested);
       if (!target) throw new Error("The selected run is no longer available. Reload the project.");
@@ -886,6 +892,7 @@ async function finishClip() {
   pause();
   if (state.draft.status !== "rejected") {
     if (!covered(state.draft)) throw new Error("Add boxes covering both dancing interval endpoints before completing this clip, or reject it.");
+    requireRunDirection(state.draft);
     edited(a => { a.status = "accepted"; });
   } else if (!state.dirty) {
     // Explicit completion always confirms a disk write, even for unchanged clips.
@@ -902,6 +909,7 @@ async function finishClip() {
 async function addRun() {
   if (!current()) return;
   pause();
+  if (state.draft.status === "accepted") requireRunDirection(state.draft);
   $("add-run").disabled = true;
   try {
     await saveRun();

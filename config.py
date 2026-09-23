@@ -5,16 +5,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent
 STATIC = ROOT / "static"
-# SESSION_NAME = "session_0"
-SESSION_NAME = "example_dataset"
+SESSION_NAME = "session_0"
+# SESSION_NAME = "example_dataset"
+# SESSION_NAME = "cam1_2021"
 CLIPS_DIR_CANDIDATES = (
     REPO / "annotation_tool" / "guide" / SESSION_NAME / "run_clips",
     REPO / "outputs" / SESSION_NAME / "run_clips",
     REPO / "candidate_run_detector/outputs" / SESSION_NAME / "run_clips",
-    REPO / "dance_decoder/candidate_run_detector/outputs" / SESSION_NAME / "run_clips",
+    REPO / "dance_decoder/berlin_data/annotation_dataset" / SESSION_NAME / "run_clips",
 )
 # DEFAULT_CLIPS_DIR = CLIPS_DIR_CANDIDATES[3]
-DEFAULT_CLIPS_DIR = CLIPS_DIR_CANDIDATES[0]
+DEFAULT_CLIPS_DIR = CLIPS_DIR_CANDIDATES[2]
 ANNOTATIONS_DIR_NAME = "annotations"
 MASTER_FILENAME = "master.json"
 DETECTOR_DIR = REPO / "dance_decoder/candidate_run_detector"
