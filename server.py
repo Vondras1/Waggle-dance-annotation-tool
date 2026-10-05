@@ -26,9 +26,6 @@ def media_catalog(clips, store):
 
 
 def default_clips_dir():
-    for path in config.CLIPS_DIR_CANDIDATES:
-        if path.is_dir():
-            return path
     return config.DEFAULT_CLIPS_DIR
 
 
