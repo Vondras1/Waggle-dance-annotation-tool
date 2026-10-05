@@ -11,7 +11,8 @@ const state = {project: null, id: null, draft: null, frame: 0, loadedFrame: -1,
   image: null, playbackRate: 1, imageToken: 0, tool: "box", drag: null, dirty: false, version: 0,
   saving: null, timer: null, conflict: false, playing: false, playToken: 0,
   view: "runs", switching: false, selected: new Set(), combImage: null, combPoints: [], dancePending: 0,
-  brightness: 100, histogramContrast: 0, enhancedFrameCache: null};
+  brightness: 100, histogramContrast: 0, enhancedFrameCache: null,
+  boxSettingsKey: null, bboxSize: 64, fixedBbox: false};
 let danceQueue = Promise.resolve();
 let navigationQueue = Promise.resolve();
 let toastTimer;
@@ -35,6 +36,50 @@ function restoredRun(project) {
     if (project.clips.some(c => c.id === id)) return id;
   } catch (_) {}
   return project.clips[0]?.id;
+}
+function renderBoxSettings() {
+  if (!state.project) return;
+  const defaultSize = state.project.bbox_size;
+  // A changed config default takes effect after restarting and refreshing.
+  const key = `dance-annotation:box:${state.project.clips_dir}:${defaultSize}`;
+  if (state.boxSettingsKey !== key) {
+    state.boxSettingsKey = key;
+    state.bboxSize = defaultSize;
+    state.fixedBbox = false;
+    try {
+      const saved = JSON.parse(localStorage.getItem(key));
+      if (Number.isInteger(saved?.size) && saved.size > 0) {
+        state.bboxSize = saved.size;
+        state.fixedBbox = saved.enabled === true;
+      }
+    } catch (_) {}
+  }
+  inputValue("bbox-size", state.bboxSize);
+  $("fixed-bbox").checked = state.fixedBbox;
+  updateToolHint();
+}
+function changeBoxSettings() {
+  const size = Number($("bbox-size").value);
+  if (!Number.isInteger(size) || size < 1) {
+    $("bbox-size").value = state.bboxSize;
+    throw new Error("Square size must be a positive integer in clip pixels.");
+  }
+  state.bboxSize = size;
+  state.fixedBbox = $("fixed-bbox").checked;
+  state.drag = null;
+  try {
+    localStorage.setItem(state.boxSettingsKey, JSON.stringify({size, enabled: state.fixedBbox}));
+  } catch (_) {}
+  updateToolHint();
+  drawFrame();
+}
+function fixedSquare(center, size, width, height) {
+  if (!Number.isInteger(size) || size < 1 || size > Math.min(width, height)) {
+    throw new Error(`Square size must be between 1 and ${Math.min(width, height)} px for this clip.`);
+  }
+  const x = clamp(center[0] - size / 2, 0, width - size);
+  const y = clamp(center[1] - size / 2, 0, height - size);
+  return [x, y, x + size, y + size];
 }
 function el(tag, text, className) {
   const node = document.createElement(tag);
@@ -89,7 +134,7 @@ function covered(a) {
   return first <= last && keys.length > 0 && keys[0].frame <= first && keys[keys.length - 1].frame >= last;
 }
 function requireRunDirection(a) {
-  if (!Number.isFinite(a.direction_deg)) {
+  if (!a.uncertain && !Number.isFinite(a.direction_deg)) {
     throw new Error("This run is marked as dancing. Set the run direction angle before moving to another run.");
   }
 }
@@ -98,7 +143,7 @@ function edited(mutator) {
   const before = clone(state.draft);
   mutator(state.draft);
   state.draft.keyframes.sort((a, b) => a.frame - b.frame);
-  if (state.draft.status === "accepted" && !covered(state.draft)) {
+  if (state.draft.status === "accepted" && !state.draft.uncertain && !covered(state.draft)) {
     if (memberDance(state.id)) {
       state.draft = before;
       error("This run belongs to a dance. Keep boxes covering its interval, or remove it from the dance first.");
@@ -345,6 +390,7 @@ function enhancedFrameImage() {
   return offscreen;
 }
 function renderEditor() {
+  renderBoxSettings();
   if (!current()) return;
   const m = meta(), a = state.draft, key = sample(a, state.frame);
   const ready = state.loadedFrame === state.frame;
@@ -377,7 +423,9 @@ function renderEditor() {
   $("outside-interval").textContent = "Outside the selected run interval";
   $("box-coordinate").textContent = key ? `Crop: ${key.bbox.map(v => v.toFixed(1)).join(", ")}\nOriginal: ${key.bbox.map((v, i) => (v + (i % 2 ? m.run.bbox_y_min_px : m.run.bbox_x_min_px)).toFixed(1)).join(", ")}` : (a.excluded_frames || []).includes(state.frame) ? "Legacy deleted box. Edit a surrounding keyframe or use Delete box to restore interpolation." : "Draw the bee's bounding box.";
   for (const status of ["unreviewed", "accepted", "rejected"]) $("status-" + status).classList.toggle("active", a.status === status);
-  $("accept-help").textContent = covered(a) ? "Boxes cover both interval endpoints. Ready for review." : "To accept, add boxes covering both interval endpoints.";
+  $("accept-help").textContent = a.uncertain
+    ? "Uncertain run: direction and endpoint boxes are optional. Save and continue with the annotations available."
+    : covered(a) ? "Boxes cover both interval endpoints. Ready for review." : "To accept, add boxes covering both interval endpoints.";
   const denominator = Math.max(1, m.frame_count - 1);
   $("interval-band").style.left = `${100 * a.start_frame / denominator}%`;
   $("interval-band").style.width = `${100 * (a.end_frame - a.start_frame) / denominator}%`;
@@ -555,7 +603,7 @@ function drawFrame() {
     ctx.setLineDash(!drag && key?.provenance !== "keyframe" ? [7, 4] : []);
     ctx.strokeRect(x0, y0, x1 - x0, y1 - y0); ctx.setLineDash([]);
     ctx.fillStyle = ctx.strokeStyle;
-    for (const [x, y] of [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]) ctx.fillRect(x-3, y-3, 6, 6);
+    if (!state.fixedBbox) for (const [x, y] of [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]) ctx.fillRect(x-3, y-3, 6, 6);
     arrow(ctx, (x0+x1)/2, (y0+y1)/2, drawing.direction_deg, CONFIG.directionLength, CONFIG.directionColor);
   }
   if (drag && drag.mode !== "box") {
@@ -571,8 +619,15 @@ function point(event, canvas) {
 function setTool(tool) {
   state.tool = tool; state.drag = null;
   for (const value of ["box", "direction"]) $("tool-"+value).classList.toggle("active", value === tool);
-  $("tool-hint").textContent = tool === "box" ? "Drag to draw a box. Drag inside a box to move it; drag a corner to resize." : "Drag in the run's travel direction. The angle applies to the whole run.";
+  updateToolHint();
   drawFrame();
+}
+function updateToolHint() {
+  const boxHint = state.fixedBbox
+    ? `Click to place a ${state.bboxSize} × ${state.bboxSize} px square. Drag inside to move it; size stays fixed.`
+    : "Drag to draw a box. Drag inside a box to move it; drag a corner to resize.";
+  $("tool-hint").textContent = state.tool === "box" ? boxHint : "Drag in the run's travel direction. The angle applies to the whole run.";
+  $("tool-box").title = boxHint + " (B)";
 }
 function beginDrag(event) {
   if (!current() || state.loadedFrame !== state.frame || event.button !== 0) return;
@@ -581,6 +636,18 @@ function beginDrag(event) {
   }
   pause(); event.preventDefault();
   const canvas = $("frame-canvas"), start = point(event, canvas), key = sample(state.draft, state.frame);
+  if (state.tool === "box" && state.fixedBbox) {
+    // Validate before starting a gesture; never shrink a fixed square to fit.
+    const box = fixedSquare(start, state.bboxSize, canvas.width, canvas.height);
+    const b = key?.bbox;
+    const inside = b && start[0] >= b[0] && start[0] <= b[2] && start[1] >= b[1] && start[1] <= b[3];
+    state.drag = {mode: "box", operation: "fixed", start, end: start, key,
+      frame: state.frame, size: state.bboxSize, box,
+      center: inside ? [(b[0]+b[2])/2, (b[1]+b[3])/2] : start};
+    canvas.setPointerCapture(event.pointerId);
+    moveDrag(event);
+    return;
+  }
   state.drag = {mode: state.tool, start, end: start, key, frame: state.frame};
   if (state.tool === "box") {
     state.drag.operation = "draw";
@@ -601,7 +668,10 @@ function moveDrag(event) {
   if (!state.drag) return;
   const d = state.drag; d.end = end;
   if (d.mode === "box") {
-    if (d.operation === "move") {
+    if (d.operation === "fixed") {
+      d.box = fixedSquare([d.center[0]+end[0]-d.start[0], d.center[1]+end[1]-d.start[1]],
+        d.size, canvas.width, canvas.height);
+    } else if (d.operation === "move") {
       const b = d.key.bbox;
       const dx = clamp(end[0]-d.start[0], -b[0], canvas.width-b[2]);
       const dy = clamp(end[1]-d.start[1], -b[1], canvas.height-b[3]);
@@ -619,7 +689,8 @@ function endDrag(event) {
   const d = state.drag; state.drag = null;
   if ($( "frame-canvas").hasPointerCapture(event.pointerId)) $("frame-canvas").releasePointerCapture(event.pointerId);
   if (d.mode === "box") {
-    if (!d.box || d.box[2]-d.box[0] < 2 || d.box[3]-d.box[1] < 2) { drawFrame(); return; }
+    const minimum = d.operation === "fixed" ? 1 : 2;
+    if (!d.box || d.box[2]-d.box[0] < minimum || d.box[3]-d.box[1] < minimum) { drawFrame(); return; }
     edited(a => putKey(a, {frame:d.frame,bbox:d.box,orientation_deg:d.key?.orientation_deg ?? null,uncertain:d.key?.uncertain ?? false}));
   } else {
     if (Math.hypot(d.end[0]-d.start[0],d.end[1]-d.start[1]) < 3) return;
@@ -891,7 +962,7 @@ async function finishClip() {
   if (!state.draft) return;
   pause();
   if (state.draft.status !== "rejected") {
-    if (!covered(state.draft)) throw new Error("Add boxes covering both dancing interval endpoints before completing this clip, or reject it.");
+    if (!state.draft.uncertain && !covered(state.draft)) throw new Error("Add boxes covering both dancing interval endpoints before completing this clip, mark it uncertain, or reject it.");
     requireRunDirection(state.draft);
     edited(a => { a.status = "accepted"; });
   } else if (!state.dirty) {
@@ -954,6 +1025,8 @@ function bindEvents() {
   on("brightness-reset","click",()=>setBrightness(100));
   on("histogram-contrast","input",e=>setHistogramContrast(e.target.value));
   on("histogram-contrast-reset","click",()=>setHistogramContrast(0));
+  on("bbox-size","change",changeBoxSettings);
+  on("fixed-bbox","change",changeBoxSettings);
   on("reset-run","click",async()=>{
     clearTimeout(state.timer);if(state.saving) await state.saving;
     state.draft=clone(current().annotation);state.dirty=false;state.version++;renderEditor();renderRunList();saveStatus("Saved version restored");
@@ -975,7 +1048,7 @@ function bindEvents() {
   on("add-keyframe","click",()=>editCurrentKey(()=>{}));
   on("delete-box", "click", deleteCurrentBox);
   for(const status of ["unreviewed","accepted","rejected"])on("status-"+status,"click",()=>{
-    if(status==="accepted"&&!covered(state.draft))throw new Error("Add box keyframes covering the first and last run frames before accepting.");
+    if(status==="accepted"&&!state.draft.uncertain&&!covered(state.draft))throw new Error("Add box keyframes covering the first and last run frames before accepting, or mark the run uncertain.");
     if(status!=="accepted"&&memberDance(state.id))throw new Error("Remove this run from its dance before changing its status.");
     edited(a=>{a.status=status;});
     return saveRun();
@@ -1025,7 +1098,11 @@ async function init() {
     saveStatus("Server restart required", "error");
     throw new Error("The running annotation server is outdated. Stop it, start python -m annotation_tool again, and refresh this page.");
   }
+  if (!Number.isInteger(project.bbox_size) || project.bbox_size < 1) {
+    throw new Error("Restart the annotation server and refresh this page to load dataset box settings.");
+  }
   state.project=project;
+  renderBoxSettings();
   if(!state.project.clips.length) {
     $("frame-loading").hidden = true;
     renderRunList();saveStatus("Choose project folders");openFolders();return;

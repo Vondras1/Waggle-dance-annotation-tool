@@ -179,6 +179,7 @@ def validate_annotation(annotation, metadata):
     status = annotation.get("status", "unreviewed")
     if not isinstance(status, str) or status not in STATUSES:
         raise ValueError("status must be unreviewed, accepted, or rejected")
+    uncertain = _boolean(annotation.get("uncertain", False), "uncertain")
     keyframes = annotation.get("keyframes", [])
     if not isinstance(keyframes, list):
         raise ValueError("keyframes must be a list")
@@ -217,13 +218,13 @@ def validate_annotation(annotation, metadata):
         raise ValueError("A frame cannot contain both a box keyframe and a deleted-box marker")
     normalized.sort(key=lambda keyframe: keyframe["frame"])
     active = [frame for frame in range(start, end + 1) if frame not in excluded]
-    if status == "accepted" and (not active or not normalized or normalized[0]["frame"] > active[0] or normalized[-1]["frame"] < active[-1]):
+    if status == "accepted" and not uncertain and (not active or not normalized or normalized[0]["frame"] > active[0] or normalized[-1]["frame"] < active[-1]):
         raise ValueError("Accepted runs need box keyframes at or before the start and at or after the end; add endpoint boxes first")
     return {
         "start_frame": start,
         "end_frame": end,
         "status": status,
-        "uncertain": _boolean(annotation.get("uncertain", False), "uncertain"),
+        "uncertain": uncertain,
         "notes": _string(annotation.get("notes", ""), "notes"),
         "direction_deg": _angle(annotation.get("direction_deg"), "direction_deg"),
         "keyframes": normalized,

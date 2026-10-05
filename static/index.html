@@ -27,7 +27,23 @@
     </aside>
     <section class="editor-section" aria-label="Run annotation editor">
       <div class="editor-heading"><div><div class="eyebrow">RUN ANNOTATION</div><h2 id="current-run-title">Select a run</h2><p id="current-run-subtitle" class="muted">Review the interval, then annotate a few frames.</p></div><div class="run-nav"><button id="previous-run" class="icon-button" aria-label="Previous run" title="Previous run">←</button><button id="next-run" class="icon-button" aria-label="Next run" title="Next run">→</button></div></div>
-      <div class="clip-runs-toolbar"><label>Run in this clip<select id="clip-run-select" aria-label="Run in this clip"></select></label><button id="add-run" class="button secondary" title="Add an independent run starting at the current frame">+ Add run</button><button id="delete-run" class="text-button danger">Delete added run</button><div id="clip-run-tabs" class="clip-run-tabs" aria-label="Runs in this clip"></div></div>
+      <div class="run-settings-row">
+        <div class="clip-runs-toolbar">
+          <label>Run in this clip<select id="clip-run-select" aria-label="Run in this clip"></select></label>
+          <div class="clip-run-actions"><button id="add-run" class="button secondary" title="Add an independent run starting at the current frame">+ Add run</button><button id="delete-run" class="text-button danger">Delete added run</button></div>
+          <div id="clip-run-tabs" class="clip-run-tabs" aria-label="Runs in this clip"></div>
+        </div>
+      <section class="bbox-settings-panel" aria-labelledby="bbox-settings-title">
+        <div class="bbox-settings-description">
+          <h3 id="bbox-settings-title">Fixed bounding box</h3>
+          <p id="bbox-size-help" class="sr-only">Square size in clip pixels. Remembered across clips in this dataset.</p>
+        </div>
+        <div class="fixed-bbox-control">
+          <label class="bbox-size-label" for="bbox-size">Square size <input id="bbox-size" type="number" min="1" step="1" aria-describedby="bbox-size-help"><span>px</span></label>
+          <label class="checkbox-field"><input id="fixed-bbox" type="checkbox"><span>Use fixed bbox size</span></label>
+        </div>
+      </section>
+      </div>
       <div class="canvas-toolbar"><div class="tool-group" role="group" aria-label="Annotation tools"><button id="tool-box" class="tool active" title="Draw a box; drag its interior to move, corners to resize (B)">▣ <span>Box</span><kbd>B</kbd></button><button id="tool-direction" class="tool" title="Drag in the run's travel direction (D)">➜ <span>Run direction</span><kbd>D</kbd></button></div><div class="canvas-display-controls"><label class="brightness-control" for="frame-brightness"><span>Brightness</span><input id="frame-brightness" type="range" min="100" max="180" value="100" step="5"><output id="frame-brightness-value" for="frame-brightness">100%</output></label><button id="brightness-reset" type="button" class="icon-button" title="Reset brightness to 100%" aria-label="Reset brightness">↺</button><label class="histogram-control" for="histogram-contrast"><span>Hist. contrast</span><input id="histogram-contrast" type="range" min="0" max="100" value="0" step="5"><output id="histogram-contrast-value" for="histogram-contrast">0%</output></label><button id="histogram-contrast-reset" type="button" class="icon-button" title="Disable histogram contrast" aria-label="Disable histogram contrast">↺</button><span id="canvas-dimensions" class="mono muted"></span></div></div>
       <div id="canvas-stage" class="canvas-stage"><canvas id="frame-canvas" width="448" height="448" aria-label="Bee frame. Draw a box or a direction arrow with the selected tool."></canvas><div id="frame-loading" class="canvas-message">Loading project…</div><span id="frame-kind" class="canvas-tag" hidden></span><div id="outside-interval" class="outside-interval" hidden>Neutral · outside dancing interval</div></div>
       <div class="canvas-caption"><span id="tool-hint">Drag to draw a box. Drag inside a box to move it; drag a corner to resize.</span><span id="cursor-coordinate" class="mono"></span></div>

@@ -23,8 +23,8 @@ python -m annotation_tool
 ```
 
 Open [http://localhost:8765](http://localhost:8765). The server listens only on
-your computer. An example dataset is loaded by default so you can try out the
-tool. When you are ready to use your own data, click **Folders** in the top bar
+your computer. The dataset selected in `config.py` is loaded on startup.
+To try the example, set `DEFAULT_DATASET = "example_dataset"`. Click **Folders** in the top bar
 to change the source and save folders. If the default clips folder cannot be
 found, choose these folders in the opening dialog.
 
@@ -46,6 +46,35 @@ Edit [config.py](config.py) to change the default clip locations, server port,
 image/cache settings, and browser settings. Restart the server after editing it.
 Command-line options take precedence over the defaults.
 
+In `config.py`, select `DEFAULT_DATASET` and edit its entry in `DATASETS`:
+
+```python
+DEFAULT_DATASET = "prague_2026-09-08T14"
+DATASETS = {
+    "prague_2026-09-08T14": {
+        "clips_dir": REPO / "dance_decoder/yowo_data/prague_2026-09-08T14/run_clips",
+        "bbox_size": 64,  # Square side length in clip pixels; tune for this dataset.
+    },
+    # Add more datasets here.
+}
+```
+
+Only the selected path is used; an existing folder elsewhere never overrides it.
+Folders selected with **Folders** or `--clips-dir` use the size from the matching
+`clips_dir` entry, or `DEFAULT_BBOX_SIZE` if unlisted.
+
+For square annotations, edit **Square size** in the **Fixed bounding box** panel beside **Run in this clip** and enable
+**Use fixed bbox size** underneath it. Click to place a square centered on the
+pointer, or drag inside a box to move it. At image edges the square moves inward
+without shrinking. A size larger than the clip is rejected; choose a smaller
+size or disable fixed mode. Disabling it restores free drawing and resizing.
+Existing boxes change only when you place or move them; changing this setting
+does not resize all saved keyframes. Interpolation still uses the saved boxes.
+
+The size and toggle are remembered per source folder in this browser. They do
+not rewrite `config.py`; changing the configured size and restarting/refreshing
+resets the browser preference to the new size with fixed mode off.
+
 ## Annotate a run ([Watch the annotation demo](guide/example_runs.webm))
 
 1. Select a candidate and set its first and last dancing frames with **[** and
@@ -58,7 +87,15 @@ Command-line options take precedence over the defaults.
 4. Set the run direction, uncertainty, and notes, then accept the run or reject
    it as a false detection.
 
-Accepted runs need boxes at both interval endpoints. A clip may contain
+Accepted runs normally need boxes at both interval endpoints. If a run cannot
+be annotated reliably, check **Uncertain run**: direction and endpoint boxes
+are optional, and **Accept** or **Save clip & next** completes the review with
+whatever annotations are available. This exception applies to the whole-run
+checkbox, not **Uncertain frame**. Unchecking it restores the normal requirements.
+Uncertain runs are excluded from exports by default; explicitly including them
+exports only available keyframes/interpolation, never missing or held boxes.
+
+A clip may contain
 several independent runs; use **+ Add run** to create another one. Use **Save
 clip & next** to save and continue.
 
@@ -90,3 +127,15 @@ export keyframes only, or use a frame stride from the export dialog.
 
 Boxes use crop coordinates in the editor. The master file also stores matching
 undistorted full-image coordinates and source/output timestamps.
+
+## Tests
+
+Regression tests live in `tests/`. Run them from the parent directory containing
+`annotation_tool` (Python tests require OpenCV and NumPy; JavaScript tests require Node.js):
+
+```bash
+python -m unittest discover -s annotation_tool/tests -t .
+node annotation_tool/tests/test_box_deletion.js
+node annotation_tool/tests/test_fixed_bbox.js
+node annotation_tool/tests/test_uncertain_run.js
+```

@@ -1,7 +1,7 @@
-// Run with: node annotation_tool/test_box_deletion.js
+// Run with: node annotation_tool/tests/test_box_deletion.js
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync(`${__dirname}/static/app.js`, 'utf8');
+const source = fs.readFileSync(`${__dirname}/../static/app.js`, 'utf8');
 vm.runInNewContext(source.replace('safely(init);', '') + `
 function check(value, message) { if (!value) throw new Error(message); }
 function box(frame, x) { return {frame, bbox: [x, 0, x + 10, 10], orientation_deg: 0, uncertain: false}; }

@@ -94,6 +94,22 @@ class InterpolationTests(unittest.TestCase):
         self.assertEqual([frame["frame"] for frame in frames], [1, 2, 3])
         self.assertTrue(all(frame["provenance"] == "interpolated" for frame in frames))
 
+    def test_uncertain_run_can_be_completed_with_missing_annotations(self):
+        annotation = accepted()
+        annotation.update(uncertain=True, direction_deg=None, keyframes=[])
+        self.assertEqual(materialize(annotation, metadata()), [])
+        annotation["keyframes"] = [keyframe(2)]
+        normalized = validate_annotation(annotation, metadata())
+        self.assertIsNone(normalized["direction_deg"])
+        self.assertEqual(normalized["status"], "accepted")
+        annotation["uncertain"] = False
+        with self.assertRaisesRegex(ValueError, "endpoint"):
+            validate_annotation(annotation, metadata())
+        annotation["uncertain"] = True
+        annotation["keyframes"][0]["bbox"] = [0, 0, 0, 0]
+        with self.assertRaisesRegex(ValueError, "positive area"):
+            validate_annotation(annotation, metadata())
+
     def test_validation_rejects_invalid_values(self):
         invalid_updates = [
             {"start_frame": True}, {"end_frame": 5}, {"end_frame": -1},
@@ -363,7 +379,7 @@ class StorageTests(unittest.TestCase):
 import sys
 from pathlib import Path
 from annotation_tool.model import MasterStore
-from annotation_tool.test_model import accepted, metadata
+from annotation_tool.tests.test_model import accepted, metadata
 clips = {'run_000001': {'metadata': metadata(), 'video_path': Path('run_000001.mp4')}}
 store = MasterStore(sys.argv[1], clips)
 before = store.get_master()
@@ -470,6 +486,15 @@ class YoloTests(unittest.TestCase):
         self.assertEqual(len(yolo_rows(self.master(annotation), include_uncertain=True)), 5)
         annotation["uncertain"] = True
         self.assertEqual(yolo_rows(self.master(annotation)), [])
+
+    def test_incomplete_uncertain_export_never_invents_boxes(self):
+        annotation = accepted()
+        annotation.update(uncertain=True, direction_deg=None, keyframes=[])
+        self.assertEqual(yolo_rows(self.master(annotation), include_uncertain=True), [])
+        annotation["keyframes"] = [keyframe(2)]
+        self.assertEqual(yolo_rows(self.master(annotation)), [])
+        rows = yolo_rows(self.master(annotation), include_uncertain=True)
+        self.assertEqual([row["frame"] for row in rows], [2])
 
 
 if __name__ == "__main__":

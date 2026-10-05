@@ -100,12 +100,28 @@ class ServerTests(unittest.TestCase):
         missing = self.root / "missing"
         with patch.object(config, "CLIPS_DIR_CANDIDATES", (missing, self.clips)), \
              patch.object(config, "DEFAULT_CLIPS_DIR", missing):
-            self.assertEqual(default_clips_dir(), self.clips)
+            self.assertEqual(default_clips_dir(), missing)
             with patch.object(config, "CLIPS_DIR_CANDIDATES", (missing,)):
                 self.assertEqual(default_clips_dir(), missing)
         with patch.object(config, "MAX_REQUEST_BYTES", 1):
             status, _, _ = self.request("PUT", "/api/dances", {"dances": []})
             self.assertEqual(status, 400)
+
+    def test_dataset_box_size_follows_source_folder(self):
+        other = self.root / "other_clips"
+        shutil.copytree(self.clips, other)
+        datasets = {"first": {"clips_dir": self.clips, "bbox_size": 24},
+                    "second": {"clips_dir": other, "bbox_size": 32}}
+        with patch.object(config, "DATASETS", datasets):
+            app = Application(self.clips, self.master_path, comb_image=self.comb)
+            self.addCleanup(app.close)
+            self.assertEqual(app.project()["bbox_size"], 24)
+            project = app.open_project(str(other), str(self.root / "other_annotations"))
+            self.assertEqual(project["bbox_size"], 32)
+            self.assertEqual(config.bbox_size_for(self.root / "unknown"), config.DEFAULT_BBOX_SIZE)
+            datasets["second"]["bbox_size"] = 0
+            with self.assertRaisesRegex(ValueError, "positive integer"):
+                config.bbox_size_for(other)
 
     def accepted(self):
         annotation = copy.deepcopy(self.app.project()["clips"][0]["annotation"])
@@ -119,6 +135,19 @@ class ServerTests(unittest.TestCase):
     def save(self, annotation, revision=0):
         return self.request("PUT", "/api/runs/run_000001",
                             {"revision": revision, "annotation": annotation, "angle_convention": self.app.project()["angle_convention"]})
+
+    def test_incomplete_uncertain_run_saves_and_reopens(self):
+        annotation = self.accepted()
+        annotation.update(uncertain=True, direction_deg=None, keyframes=[])
+        status, _, content = self.save(annotation)
+        self.assertEqual(status, 200, content)
+        reopened = Application(self.clips, self.master_path, comb_image=self.comb)
+        self.addCleanup(reopened.close)
+        saved = reopened.project()["clips"][0]["annotation"]
+        self.assertTrue(saved["uncertain"])
+        self.assertEqual(saved["status"], "accepted")
+        self.assertIsNone(saved["direction_deg"])
+        self.assertEqual(saved["keyframes"], [])
 
     def test_run_dance_and_reload_round_trip(self):
         self.assertEqual(self.app.project()["annotation_api_version"], 5)

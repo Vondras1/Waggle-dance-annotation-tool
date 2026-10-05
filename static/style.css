@@ -6,12 +6,30 @@
 
 .folders-dialog{width:min(620px,calc(100vw - 30px))}.folders-dialog input:not([type=checkbox]){max-width:none}.folders-dialog .field-help{overflow-wrap:anywhere}
 
-.clip-runs-toolbar{display:flex;align-items:end;gap:12px;margin-bottom:16px;flex-wrap:wrap}.clip-runs-toolbar label{min-width:170px;flex:1}.clip-runs-toolbar select{margin-top:4px}.clip-runs-toolbar .text-button{align-self:center}
+.run-settings-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin-bottom:18px}
+.clip-runs-toolbar{display:flex;flex-direction:column;align-items:stretch;gap:10px;min-width:0;padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
+.clip-runs-toolbar>label{min-width:0;font-size:14px;font-weight:600}
+.clip-runs-toolbar select{margin-top:8px;font-size:12px;font-weight:400}
+.clip-run-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
+.clip-run-actions .button{padding:7px 10px}
+.clip-runs-toolbar .text-button{align-self:center}
+@media(max-width:1000px){.run-settings-row{grid-template-columns:minmax(0,1fr)}}
 .clip-run-tabs{display:flex;gap:6px;width:100%;flex-wrap:wrap}.clip-run-tab{border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--muted);padding:6px 10px;font-size:11px}.clip-run-tab:hover{background:var(--panel-alt);color:var(--text)}.clip-run-tab.active{border-color:var(--accent);background:var(--accent-dark);color:var(--accent)}
 
 
 /* Annotation-only frame brightness control. The filter itself is applied in canvas drawing code. */
-.canvas-display-controls{display:flex;align-items:center;gap:9px;margin-left:auto;min-width:0}
+.canvas-toolbar{flex-wrap:wrap}
+.canvas-display-controls{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:9px;margin-left:auto;min-width:0}
+.bbox-settings-panel{display:flex;flex-direction:column;align-items:stretch;gap:10px;min-width:0;padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
+.bbox-settings-description h3{font-size:14px;color:var(--text)}
+.fixed-bbox-control{display:flex;flex-direction:column;gap:10px;flex:none}
+.fixed-bbox-control label{font-size:12px;color:var(--text);white-space:nowrap}
+.fixed-bbox-control .bbox-size-label{display:flex;align-items:center;gap:8px}
+.fixed-bbox-control .bbox-size-label input{width:80px;min-height:38px;margin:0;padding:8px 10px;font-size:14px}
+.fixed-bbox-control .bbox-size-label>span{color:var(--muted)}
+.fixed-bbox-control .checkbox-field{margin:0;gap:9px;min-height:28px;cursor:pointer}
+.fixed-bbox-control input[type=checkbox]{width:18px;height:18px;flex:none}
+@media(max-width:480px){.bbox-settings-panel{padding:12px;gap:12px}.fixed-bbox-control .bbox-size-label input{width:68px}}
 .brightness-control{display:flex;align-items:center;gap:7px;margin:0;font-size:10px;color:var(--muted);white-space:nowrap}
 .brightness-control input[type=range]{width:110px;margin:0;accent-color:var(--accent)}
 .brightness-control output{min-width:35px;text-align:right;font:10px ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--text)}

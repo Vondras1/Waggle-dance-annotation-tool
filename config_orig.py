@@ -5,38 +5,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent
 STATIC = ROOT / "static"
-# Choose a dataset here. Paths and square side lengths (clip pixels) live together.
-DEFAULT_DATASET = "berlin_2021"
-DATASETS = {
-    "example_dataset": {
-        "clips_dir": ROOT / "guide" / "example_dataset" / "run_clips",
-        "bbox_size": 70,
-    },
-    "berlin_2021": {
-        "clips_dir": REPO / "dance_decoder/yowo_data/berlin_2021" / "cam0_2021" / "run_clips",
-        "bbox_size": 55,
-    },
-    "prague_2026-09-08T14": {
-        "clips_dir": REPO / "dance_decoder/yowo_data/prague_2026-09-08T14" / "run_clips",
-        "bbox_size": 70,
-    },
-}
-DEFAULT_CLIPS_DIR = DATASETS[DEFAULT_DATASET]["clips_dir"]
-# Compatibility for scripts that use the old list; no automatic path selection.
-CLIPS_DIR_CANDIDATES = tuple(dataset["clips_dir"] for dataset in DATASETS.values())
-DEFAULT_BBOX_SIZE = 70  # Folders opened via CLI/UI that are not listed above.
-
-
-def bbox_size_for(clips_dir):
-    source = Path(clips_dir).expanduser().resolve()
-    size = next((dataset["bbox_size"] for dataset in DATASETS.values()
-                 if Path(dataset["clips_dir"]).expanduser().resolve() == source),
-                DEFAULT_BBOX_SIZE)
-    if type(size) is not int or size < 1:
-        raise ValueError("Dataset bbox_size must be a positive integer (clip pixels)")
-    return size
-
-
+# SESSION_NAME = "session_0"
+# SESSION_NAME = "example_dataset"
+SESSION_NAME = "cam1_2021"
+CLIPS_DIR_CANDIDATES = (
+    REPO / "annotation_tool" / "guide" / SESSION_NAME / "run_clips",
+    REPO / "outputs" / SESSION_NAME / "run_clips",
+    REPO / "candidate_run_detector/outputs" / SESSION_NAME / "run_clips",
+    REPO / "dance_decoder/yowo_data/berlin_2021" / SESSION_NAME / "run_clips",
+    REPO / "dance_decoder/yowo_data/prague_2026-09-08T14" / "run_clips"
+)
+# DEFAULT_CLIPS_DIR = CLIPS_DIR_CANDIDATES[3]
+DEFAULT_CLIPS_DIR = CLIPS_DIR_CANDIDATES[-2]
 ANNOTATIONS_DIR_NAME = "annotations"
 MASTER_FILENAME = "master.json"
 DETECTOR_DIR = REPO / "dance_decoder/candidate_run_detector"

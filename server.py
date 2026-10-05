@@ -32,6 +32,7 @@ def default_clips_dir():
 class Application:
     def __init__(self, clips_dir, master_path=None, *, comb_image=None, bag=None, allow_empty=False):
         self.clips_dir = Path(clips_dir).expanduser().resolve()
+        self.bbox_size = config.bbox_size_for(self.clips_dir)
         self.master_path = (Path(master_path).expanduser().resolve() if master_path else
                             self.clips_dir.parent / config.ANNOTATIONS_DIR_NAME / config.MASTER_FILENAME)
         self.clips = discover_clips(self.clips_dir) if self.clips_dir.is_dir() else {}
@@ -55,6 +56,7 @@ class Application:
                 "angle_convention": master["angle_convention"],
                 "comb": self.comb.info(), "clips_dir": str(self.clips_dir),
                 "master_path": str(self.master_path),
+                "bbox_size": self.bbox_size,
                 "save_dir": str(self.master_path.parent), "project_id": self.project_id,
                 "supports_multiple_runs": True, "supports_box_exclusions": True,
                 "annotation_api_version": config.ANNOTATION_API_VERSION,
@@ -89,7 +91,7 @@ class Application:
                     else:
                         candidate.store.save_dances([], expected_revision=0)
                 old_reader = self.reader
-                for name in ("clips_dir", "master_path", "clips", "store", "reader",
+                for name in ("clips_dir", "bbox_size", "master_path", "clips", "store", "reader",
                              "comb_image_path", "bag_path", "comb", "project_id"):
                     setattr(self, name, getattr(candidate, name))
                 old_reader.close()
