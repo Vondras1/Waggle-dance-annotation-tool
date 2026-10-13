@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent
 STATIC = ROOT / "static"
 # Choose a dataset here. Paths and square side lengths (clip pixels) live together.
-DEFAULT_DATASET = "berlin_2021"
+DEFAULT_DATASET = "prague_2026-09-03T11"
 DATASETS = {
     "example_dataset": {
         "clips_dir": ROOT / "guide" / "example_dataset" / "run_clips",
@@ -20,6 +20,15 @@ DATASETS = {
         "clips_dir": REPO / "dance_decoder/yowo_data/prague_2026-09-08T14" / "run_clips",
         "bbox_size": 70,
     },
+    "prague_2026-09-10T11": {
+        "clips_dir": REPO / "dance_decoder/yowo_data/prague_2026-09-10T11_1000_2000" / "run_clips",
+        "bbox_size": 70,
+    },
+    "prague_2026-09-03T11": {
+        "clips_dir": REPO / "dance_decoder/yowo_data/prague_2026-09-03T11_1000_2000" / "run_clips",
+        "bbox_size": 70,
+    }
+
 }
 DEFAULT_CLIPS_DIR = DATASETS[DEFAULT_DATASET]["clips_dir"]
 # Compatibility for scripts that use the old list; no automatic path selection.
@@ -58,7 +67,7 @@ DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 
 # File-format constants: changing these requires matching migration/client changes.
 SUPPORTED_CLIP_SCHEMA_VERSIONS = (1, 2)
-MASTER_SCHEMA_VERSION = 4
+MASTER_SCHEMA_VERSION = 5
 COORDINATE_SPACE = {
     "bbox_clip": "clip pixels; [x_min, y_min, x_max, y_max]; max bounds exclusive",
     "bbox_original": "full-resolution undistorted image pixels; max bounds exclusive",
@@ -114,9 +123,10 @@ class_id center_x center_y width height rows, normalized to the crop dimensions.
 Class 0 is waggle_bee: the single target bee annotated in each accepted run.
 Other bees in the crop have not been exhaustively annotated.
 
-Only the inclusive annotated run interval is exported. Rejected/unreviewed
-runs and held boxes are excluded. Uncertain runs/frames are excluded unless
-explicitly selected. Interpolated boxes are included unless keyframes-only is set.
+The inclusive definite waggle interval is exported by default. Optional boundary
+transitions are uncertain; definite non-waggle markers are never exported.
+Rejected/unreviewed runs and held boxes are excluded. Uncertain runs/frames and
+transitions are excluded unless explicitly selected. Interpolated boxes are included unless keyframes-only is set.
 
 master.json preserves all source metadata, timing, orientation, direction,
 uncertainty, dances, and original undistorted coordinates. manifest.json maps

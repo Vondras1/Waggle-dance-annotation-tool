@@ -84,8 +84,44 @@ resets the browser preference to the new size with fixed mode off.
    it a correction keyframe.
 3. **Delete box** removes the keyframe on the current frame and returns that
    frame to normal interpolation from surrounding keyframes.
-4. Set the run direction, uncertainty, and notes, then accept the run or reject
+4. Check the automatic run direction, uncertainty, and notes, then accept the run or reject
    it as a false detection.
+
+Run direction defaults to **Auto · annotated frames**. The PCA helper in `angles.py`
+fits the centers of box keyframes within the definite waggle interval, in frame
+order; first-to-last motion determines the arrow's sign. Moving/deleting boxes or
+changing the interval recalculates it. At least two distinct positions are needed;
+stationary or ambiguous trajectories leave the direction unset. The calculation
+uses annotated keyframes, not interpolated frames or uncertain boundary transitions.
+Choose **Manual** to enter an angle or draw it with **D**. Manual values stay fixed
+when boxes change; returning to Auto recalculates the direction. Existing saved
+angles without a mode are preserved as manual. The saved annotation records
+`direction_mode` alongside `direction_deg`.
+
+Boundary intervals are **optional**. Each boundary defaults to **Exact**; existing
+annotations keep their exact frames. To mark an uncertain start, select **Interval
+(optional)** for Start boundary, set the first definitely waggle frame, then set
+the last definitely non-waggle frame before it. For an uncertain end, set the last
+definitely waggle frame and the first definitely non-waggle frame after it. Use
+**Set to current frame** or enter frame numbers. Start and end modes are independent;
+**[** and **]** still set the definite waggle endpoints. Switching back to Exact
+keeps the definite endpoint and removes that boundary's interval.
+
+The timeline shows a solid definite portion and hatched transitions, with clickable
+boundary markers. Only frames strictly between a non-waggle marker and its waggle
+endpoint are ambiguous. Non-waggle markers themselves are never positive examples.
+For a boundary outside the clip, choose **Not visible in clip** and mark the first
+or last frame you can confidently identify as waggle. No missing boundary is inferred.
+Boundary uncertainty does not require checking **Uncertain run**: box coverage is
+required only over the definite portion, and the normal direction requirement remains.
+
+Exports omit ambiguous transition frames by default, including their images. The
+**Include uncertain runs, frames, and boundary transitions** option includes available
+boxes on those frames; held boxes remain excluded. The manifest records
+`boundary_uncertain` separately from other uncertainty. The master JSON (schema 5)
+keeps `start_frame` / `end_frame` as inclusive definite waggle endpoints, with optional
+`start_non_waggle_frame` / `end_non_waggle_frame` markers and `start_not_visible` /
+`end_not_visible` flags. Older masters are upgraded with a backup on the next save.
 
 Accepted runs normally need boxes at both interval endpoints. If a run cannot
 be annotated reliably, check **Uncertain run**: direction and endpoint boxes
@@ -138,4 +174,5 @@ python -m unittest discover -s annotation_tool/tests -t .
 node annotation_tool/tests/test_box_deletion.js
 node annotation_tool/tests/test_fixed_bbox.js
 node annotation_tool/tests/test_uncertain_run.js
+node annotation_tool/tests/test_boundary_intervals.js
 ```

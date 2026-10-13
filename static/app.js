@@ -133,9 +133,30 @@ function covered(a) {
   while (last >= first && excluded.has(last)) last--;
   return first <= last && keys.length > 0 && keys[0].frame <= first && keys[keys.length - 1].frame >= last;
 }
+function directionMode(a) {
+  return a.direction_mode || (Number.isFinite(a.direction_deg) ? "manual" : "auto");
+}
+function automaticDirection(a) {
+  const centers = a.keyframes.filter(k => k.frame >= a.start_frame && k.frame <= a.end_frame
+    && !(a.excluded_frames || []).includes(k.frame)).sort((a,b) => a.frame-b.frame)
+    .map(k => [(k.bbox[0]+k.bbox[2])/2, (k.bbox[1]+k.bbox[3])/2]);
+  if (centers.length < 2) return null;
+  const mx = centers.reduce((s,p) => s+p[0],0)/centers.length;
+  const my = centers.reduce((s,p) => s+p[1],0)/centers.length;
+  let xx=0, yy=0, xy=0;
+  for (const [x,y] of centers) { xx+=(x-mx)**2; yy+=(y-my)**2; xy+=(x-mx)*(y-my); }
+  if (xx+yy < 1e-12 || Math.hypot(xx-yy,2*xy) <= 1e-12*(xx+yy)) return null;
+  const theta=0.5*Math.atan2(2*xy,xx-yy);
+  let dx=Math.cos(theta), dy=Math.sin(theta);
+  const last=centers[centers.length-1], first=centers[0];
+  const motion=(last[0]-first[0])*dx+(last[1]-first[1])*dy;
+  if (Math.abs(motion) < 1e-9) return null;
+  if (motion < 0) { dx=-dx; dy=-dy; }
+  return angle(Math.atan2(dx,-dy)*180/Math.PI);
+}
 function requireRunDirection(a) {
   if (!a.uncertain && !Number.isFinite(a.direction_deg)) {
-    throw new Error("This run is marked as dancing. Set the run direction angle before moving to another run.");
+    throw new Error("Direction is unavailable. Add boxes at two distinct positions within the definite run, choose Manual direction, or mark the run uncertain.");
   }
 }
 function edited(mutator) {
@@ -143,6 +164,8 @@ function edited(mutator) {
   const before = clone(state.draft);
   mutator(state.draft);
   state.draft.keyframes.sort((a, b) => a.frame - b.frame);
+  state.draft.direction_mode = directionMode(state.draft);
+  if (state.draft.direction_mode === "auto") state.draft.direction_deg = automaticDirection(state.draft);
   if (state.draft.status === "accepted" && !state.draft.uncertain && !covered(state.draft)) {
     if (memberDance(state.id)) {
       state.draft = before;
@@ -181,6 +204,7 @@ async function saveRun() {
           state.draft = clone(current().annotation);
         }
         renderRunList();
+        renderEditor();
       } catch (e) {
         state.conflict = e.status === 409 || /revision|another|reload/i.test(e.message);
         saveStatus("Save failed · edits kept", "error");
@@ -192,8 +216,17 @@ async function saveRun() {
   })();
   try { await state.saving; } finally { state.saving = null; }
 }
+function possibleBounds(a) {
+  return [a.start_non_waggle_frame == null ? a.start_frame : a.start_non_waggle_frame + 1,
+    a.end_non_waggle_frame == null ? a.end_frame : a.end_non_waggle_frame - 1];
+}
+function boundaryUncertain(a, frame) {
+  const [first, last] = possibleBounds(a);
+  return frame >= first && frame <= last && (frame < a.start_frame || frame > a.end_frame);
+}
 function sample(a, frame) {
-  if (frame < a.start_frame || frame > a.end_frame || a.status === "rejected" || (a.excluded_frames || []).includes(frame)) return null;
+  const [first, last] = possibleBounds(a);
+  if (frame < first || frame > last || a.status === "rejected" || (a.excluded_frames || []).includes(frame)) return null;
   const keys = a.keyframes;
   if (!keys.length) return null;
   const exact = keys.find(k => k.frame === frame);
@@ -406,7 +439,17 @@ function renderEditor() {
   $("frame-total").textContent = `/ ${m.frame_count - 1}`;
   $("frame-time").textContent = `Source ${fmt(m.source_frame_times_s[state.frame])} s · output ${fmt(m.output_frame_times_s[state.frame])} s`;
   inputValue("start-frame", a.start_frame); inputValue("end-frame", a.end_frame);
-  $("interval-duration").textContent = `${fmt(m.source_frame_times_s[a.end_frame] - m.source_frame_times_s[a.start_frame])} s`;
+  renderBoundaries(a, m);
+  $("interval-duration").textContent = `${fmt(m.source_frame_times_s[a.end_frame] - m.source_frame_times_s[a.start_frame])} s${a.start_non_waggle_frame != null || a.end_non_waggle_frame != null || a.start_not_visible || a.end_not_visible ? " definite" : ""}`;
+  const manualDirection = directionMode(a) === "manual";
+  inputValue("direction-mode", directionMode(a));
+  $("run-direction").disabled = !manualDirection;
+  $("clear-direction").hidden = !manualDirection;
+  $("tool-direction").disabled = !manualDirection;
+  if (!manualDirection && state.tool === "direction") setTool("box");
+  $("direction-help").textContent = manualDirection ? "Enter degrees or draw the direction with D."
+    : Number.isFinite(a.direction_deg) ? "Calculated from box centers in the definite run. Updates when annotations change."
+    : "Add boxes at two distinct positions within the definite run to calculate direction, or choose Manual.";
   inputValue("run-direction", a.direction_deg === null ? "" : Number(a.direction_deg.toFixed(1)));
   $("frame-uncertain").checked = !!key?.uncertain;
   $("run-uncertain").checked = a.uncertain;
@@ -417,15 +460,19 @@ function renderEditor() {
   $("current-keyframe-status").textContent = key ? key.provenance : (a.excluded_frames || []).includes(state.frame) ? "Box deleted" : "No box";
   $("current-keyframe-status").className = `pill ${key?.provenance || ""}`;
   $("frame-kind").hidden = !key || state.loadedFrame !== state.frame;
-  $("frame-kind").textContent = key ? `${key.provenance}${key.uncertain || a.uncertain ? " · uncertain" : ""}` : "";
+  $("frame-kind").textContent = key ? `${key.provenance}${key.uncertain || a.uncertain || boundaryUncertain(a, state.frame) ? " · uncertain" : ""}` : "";
   $("frame-kind").className = `canvas-tag ${key?.provenance || ""}`;
-  $("outside-interval").hidden = state.frame >= a.start_frame && state.frame <= a.end_frame;
-  $("outside-interval").textContent = "Outside the selected run interval";
+  $("outside-interval").hidden = false;
+  $("outside-interval").textContent = a.status === "rejected" ? "Rejected run"
+    : boundaryUncertain(a, state.frame) ? "Uncertain transition"
+    : state.frame >= a.start_frame && state.frame <= a.end_frame ? "Definitely waggle"
+    : state.frame === a.start_non_waggle_frame || state.frame === a.end_non_waggle_frame ? "Definitely non-waggle"
+    : "Outside run";
   $("box-coordinate").textContent = key ? `Crop: ${key.bbox.map(v => v.toFixed(1)).join(", ")}\nOriginal: ${key.bbox.map((v, i) => (v + (i % 2 ? m.run.bbox_y_min_px : m.run.bbox_x_min_px)).toFixed(1)).join(", ")}` : (a.excluded_frames || []).includes(state.frame) ? "Legacy deleted box. Edit a surrounding keyframe or use Delete box to restore interpolation." : "Draw the bee's bounding box.";
   for (const status of ["unreviewed", "accepted", "rejected"]) $("status-" + status).classList.toggle("active", a.status === status);
   $("accept-help").textContent = a.uncertain
     ? "Uncertain run: direction and endpoint boxes are optional. Save and continue with the annotations available."
-    : covered(a) ? "Boxes cover both interval endpoints. Ready for review." : "To accept, add boxes covering both interval endpoints.";
+    : covered(a) ? "Boxes cover the definite waggle portion. Ready for review." : "To accept, add boxes covering the definite waggle portion.";
   const denominator = Math.max(1, m.frame_count - 1);
   $("interval-band").style.left = `${100 * a.start_frame / denominator}%`;
   $("interval-band").style.width = `${100 * (a.end_frame - a.start_frame) / denominator}%`;
@@ -438,6 +485,50 @@ function renderEditor() {
     $("keyframe-list").append(button(`${k.frame}${k.uncertain ? " ?" : ""}`, `keyframe-chip${k.frame === state.frame ? " active" : ""}`, () => seek(k.frame)));
   }
   drawFrame();
+}
+function renderBoundaries(a, m) {
+  const denominator = Math.max(1, m.frame_count - 1);
+  $("boundary-markers").replaceChildren();
+  for (const side of ["start", "end"]) {
+    const outer = a[`${side}_non_waggle_frame`], inner = a[`${side}_frame`];
+    const mode = outer != null ? "interval" : a[`${side}_not_visible`] ? "not-visible" : "exact";
+    inputValue(`${side}-boundary-mode`, mode);
+    $(`${side}-interval-controls`).hidden = mode !== "interval";
+    $(`${side}-frame-label`).textContent = mode === "exact" ? `${side === "start" ? "Start" : "End"} frame`
+      : `${side === "start" ? "First" : "Last"} definitely waggle frame`;
+    inputValue(`${side}-non-waggle-frame`, outer ?? "");
+    $(`${side}-non-waggle-frame`).max = m.frame_count - 1;
+    const band = $(`${side}-transition-band`);
+    band.hidden = mode !== "interval";
+    band.style.left = `${100 * Math.min(outer ?? inner, inner) / denominator}%`;
+    band.style.width = `${100 * Math.abs(inner - (outer ?? inner)) / denominator}%`;
+    for (const [frame, nonWaggle] of [[inner, false], ...(outer == null ? [] : [[outer, true]])]) {
+      const marker = button("", `boundary-marker${nonWaggle ? " non-waggle" : ""}`, () => seek(frame));
+      marker.style.left = `${100 * frame / denominator}%`;
+      marker.title = `${side} ${nonWaggle ? "definitely non-waggle" : "definitely waggle"}: frame ${frame}`;
+      marker.setAttribute("aria-label", marker.title);
+      $("boundary-markers").append(marker);
+    }
+  }
+}
+function validateBoundaries(a) {
+  if (a.start_frame > a.end_frame) throw new Error("Start must be at or before end. Move the other boundary first.");
+  for (const side of ["start", "end"]) {
+    const outer = a[`${side}_non_waggle_frame`], inner = a[`${side}_frame`];
+    if (outer != null && (!Number.isInteger(outer) || outer < 0 || outer >= meta().frame_count
+        || (side === "start" ? outer >= inner : outer <= inner))) {
+      throw new Error(`${side === "start" ? "Start" : "End"} non-waggle marker must be inside the clip and strictly ${side === "start" ? "before" : "after"} its definite waggle frame.`);
+    }
+  }
+}
+function setBoundaryMode(side, mode) {
+  const draft = clone(state.draft);
+  draft[`${side}_non_waggle_frame`] = mode === "interval"
+    ? draft[`${side}_non_waggle_frame`] ?? draft[`${side}_frame`] + (side === "start" ? -1 : 1) : null;
+  draft[`${side}_not_visible`] = mode === "not-visible";
+  try { validateBoundaries(draft); }
+  catch (e) { $(`${side}-boundary-mode`).value = state.draft[`${side}_non_waggle_frame`] != null ? "interval" : state.draft[`${side}_not_visible`] ? "not-visible" : "exact"; renderEditor(); throw e; }
+  edited(a => Object.assign(a, draft));
 }
 function renderRunSelector(force = false) {
   const select = $("clip-run-select");
@@ -489,7 +580,7 @@ function selectRun(id) {
       state.version++;state.frame = state.draft.start_frame;
       state.image = null;state.loadedFrame = -1;state.drag = null;
       // Replace all displayed values, including a field that previously had focus.
-      for (const name of ["frame-number", "start-frame", "end-frame", "run-direction", "run-notes"]) $(name).blur();
+      for (const name of ["frame-number", "start-frame", "end-frame", "start-non-waggle-frame", "end-non-waggle-frame", "start-boundary-mode", "end-boundary-mode", "run-direction", "run-notes"]) $(name).blur();
       renderRunList();renderEditor();renderRunSelector(true);
       await loadFrame();
       rememberRun();
@@ -597,7 +688,7 @@ function drawFrame() {
   const box = drag?.box || key?.bbox;
   if (box) {
     const [x0, y0, x1, y1] = box;
-    const uncertain = key?.uncertain || drawing.uncertain;
+    const uncertain = key?.uncertain || drawing.uncertain || boundaryUncertain(drawing, state.frame);
     ctx.strokeStyle = uncertain ? CONFIG.uncertainColor : key?.provenance === "keyframe" ? CONFIG.keyframeColor : CONFIG.interpolatedColor;
     ctx.lineWidth = 2;
     ctx.setLineDash(!drag && key?.provenance !== "keyframe" ? [7, 4] : []);
@@ -617,6 +708,9 @@ function point(event, canvas) {
     clamp((event.clientY-rect.top)*canvas.height/rect.height, 0, canvas.height)];
 }
 function setTool(tool) {
+  if (tool === "direction" && state.draft && directionMode(state.draft) !== "manual") {
+    toast("Choose Manual direction to draw an angle."); return;
+  }
   state.tool = tool; state.drag = null;
   for (const value of ["box", "direction"]) $("tool-"+value).classList.toggle("active", value === tool);
   updateToolHint();
@@ -631,9 +725,11 @@ function updateToolHint() {
 }
 function beginDrag(event) {
   if (!current() || state.loadedFrame !== state.frame || event.button !== 0) return;
-  if (state.frame < state.draft.start_frame || state.frame > state.draft.end_frame || state.draft.status === "rejected") {
+  const [first, last] = possibleBounds(state.draft);
+  if (state.frame < first || state.frame > last || state.draft.status === "rejected") {
     error("This frame is neutral. Mark the dancing interval first, and keep rejected clips neutral."); return;
   }
+  if (state.tool === "direction" && directionMode(state.draft) !== "manual") return;
   pause(); event.preventDefault();
   const canvas = $("frame-canvas"), start = point(event, canvas), key = sample(state.draft, state.frame);
   if (state.tool === "box" && state.fixedBbox) {
@@ -695,7 +791,7 @@ function endDrag(event) {
   } else {
     if (Math.hypot(d.end[0]-d.start[0],d.end[1]-d.start[1]) < 3) return;
     const degrees = angle(Math.atan2(d.end[1]-d.start[1],d.end[0]-d.start[0])*180/Math.PI + 90);
-    if (d.mode === "direction") edited(a => { a.direction_deg = degrees; });
+    if (d.mode === "direction" && directionMode(state.draft) === "manual") edited(a => { a.direction_deg = degrees; });
   }
 }
 
@@ -941,15 +1037,19 @@ async function changeFolders(event) {
   } finally { for (const id of ["folders-apply", "folders-close", "folders-cancel"]) $(id).disabled = false; }
 }
 function setBound(which, value) {
-  const number=Number(value), a=state.draft;
-  if (!Number.isInteger(number) || number<0 || number>=meta().frame_count) throw new Error("Choose a frame inside this clip.");
-  if ((which==="start_frame" && number>a.end_frame)||(which==="end_frame" && number<a.start_frame)) {
-    if (!a.keyframes.length && a.status === "unreviewed") {
-      edited(draft => { draft.start_frame = number; draft.end_frame = number; });return;
-    }
-    renderEditor();throw new Error("Start must be at or before end. Move the other boundary first.");
+  const number = value === "" ? NaN : Number(value), draft = clone(state.draft);
+  if (!Number.isInteger(number) || number < 0 || number >= meta().frame_count) {
+    $(which.replaceAll("_", "-")).value = state.draft[which] ?? "";
+    renderEditor(); throw new Error("Choose a frame inside this clip.");
   }
-  edited(a=>{a[which]=number;});
+  draft[which] = number;
+  if (draft.start_frame > draft.end_frame && !draft.keyframes.length && draft.status === "unreviewed"
+      && draft.start_non_waggle_frame == null && draft.end_non_waggle_frame == null) {
+    draft.start_frame = number; draft.end_frame = number;
+  }
+  try { validateBoundaries(draft); }
+  catch (e) { $(which.replaceAll("_", "-")).value = state.draft[which] ?? ""; renderEditor(); throw e; }
+  edited(a => Object.assign(a, draft));
 }
 function readAngle(id) {
   if($(id).value==="") return null;
@@ -1038,10 +1138,19 @@ function bindEvents() {
   on("frame-previous","click",()=>seek(state.frame-1));on("frame-next","click",()=>seek(state.frame+1));
   on("frame-number","change",e=>seek(e.target.value));on("frame-slider","input",e=>seek(e.target.value));
   on("play-toggle","click",togglePlay);
+  for (const side of ["start", "end"]) {
+    on(`${side}-boundary-mode`, "change", e => setBoundaryMode(side, e.target.value));
+    on(`${side}-non-waggle-frame`, "change", e => setBound(`${side}_non_waggle_frame`, e.target.value));
+    on(`set-${side}-non-waggle`, "click", () => setBound(`${side}_non_waggle_frame`, state.frame));
+  }
   on("mark-start","click",()=>setBound("start_frame",state.frame));on("mark-end","click",()=>setBound("end_frame",state.frame));
   on("start-frame","change",e=>setBound("start_frame",e.target.value));on("end-frame","change",e=>setBound("end_frame",e.target.value));
-  on("run-direction","change",()=>{const value=readAngle("run-direction");edited(a=>{a.direction_deg=value;});});
-  on("clear-direction","click",()=>edited(a=>{a.direction_deg=null;}));
+  on("direction-mode", "change", e => {
+    state.drag = null;
+    edited(a => { a.direction_mode = e.target.value; });
+  });
+  on("run-direction","change",()=>{if (directionMode(state.draft) !== "manual") return;const value=readAngle("run-direction");edited(a=>{a.direction_deg=value;});});
+  on("clear-direction","click",()=>{if (directionMode(state.draft) === "manual") edited(a=>{a.direction_deg=null;});});
   on("frame-uncertain","change",e=>editCurrentKey(k=>{k.uncertain=e.target.checked;}));
   on("run-uncertain","change",e=>edited(a=>{a.uncertain=e.target.checked;}));
   on("run-notes","input",e=>edited(a=>{a.notes=e.target.value;}));

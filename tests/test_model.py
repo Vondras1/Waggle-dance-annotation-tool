@@ -53,6 +53,36 @@ class InterpolationTests(unittest.TestCase):
         self.assertEqual((annotation["start_frame"], annotation["end_frame"]), (0, 4))
         self.assertEqual(materialize(annotation, metadata()), [])
 
+    def test_boundary_intervals_preserve_core_and_filter_exports(self):
+        a = accepted()
+        a.update(start_frame=2, end_frame=2, start_non_waggle_frame=0, end_non_waggle_frame=4)
+        frames = materialize(a, metadata())
+        self.assertEqual([f["frame"] for f in frames], [1, 2, 3])
+        self.assertEqual([f["boundary_uncertain"] for f in frames], [True, False, True])
+        master = {"clips": {"run": {"metadata": metadata(), "annotation": a}}}
+        self.assertEqual([r["frame"] for r in yolo_rows(master)], [2])
+        self.assertEqual([r["frame"] for r in yolo_rows(master, include_uncertain=True)], [1, 2, 3])
+        # Only the definite portion needs box coverage; held transitions never export.
+        a["keyframes"] = [keyframe(2)]
+        self.assertEqual(validate_annotation(a, metadata())["status"], "accepted")
+        self.assertEqual([r["frame"] for r in yolo_rows(master, include_uncertain=True)], [2])
+
+    def test_boundaries_are_optional_independent_and_strict(self):
+        a = accepted()
+        for field in ("start_non_waggle_frame", "end_non_waggle_frame", "start_not_visible", "end_not_visible"):
+            a.pop(field)
+        self.assertIsNone(validate_annotation(a, metadata())["start_non_waggle_frame"])
+        a.update(start_frame=2, start_non_waggle_frame=0)
+        self.assertEqual([f["frame"] for f in materialize(a, metadata())], [1, 2, 3, 4])
+        for patch in ({"start_non_waggle_frame": 2}, {"start_non_waggle_frame": -1},
+                      {"start_non_waggle_frame": True}, {"start_non_waggle_frame": 1.5},
+                      {"end_non_waggle_frame": 5}, {"end_non_waggle_frame": 4},
+                      {"start_not_visible": True}, {"end_not_visible": "yes"}):
+            with self.subTest(patch=patch), self.assertRaises(ValueError):
+                validate_annotation({**a, **patch}, metadata())
+        a.update(start_non_waggle_frame=None, start_not_visible=True)
+        self.assertTrue(validate_annotation(a, metadata())["start_not_visible"])
+
     def test_interpolation_geometry_angles_and_source_times(self):
         frames = materialize(accepted(), metadata())
         self.assertEqual(len(frames), 5)
@@ -275,7 +305,7 @@ class StorageTests(unittest.TestCase):
         migrated = MasterStore(self.path, self.clips)
         master = migrated.get_master()
         a = master["clips"]["run_000001"]["annotation"]
-        self.assertEqual(master["schema_version"], 4)
+        self.assertEqual(master["schema_version"], 5)
         self.assertEqual(master["angle_convention"], ANGLE_CONVENTION)
         self.assertEqual(a["direction_deg"], 0)
         self.assertEqual(a["keyframes"][0]["orientation_deg"], 80)
@@ -314,9 +344,24 @@ class StorageTests(unittest.TestCase):
         a = store.get_master()["clips"]["run_000001"]["annotation"]
         a["excluded_frames"] = [2]
         saved = store.save_run("run_000001", a, expected_revision=1)
-        self.assertEqual(saved["schema_version"], 4)
+        self.assertEqual(saved["schema_version"], 5)
         self.assertEqual(MasterStore(self.path, self.clips).get_master(), saved)
         self.assertEqual(self.path.with_name(self.path.name+".v3-box-exclusions-backup-r1.json").read_bytes(), raw)
+
+    def test_boundary_intervals_round_trip_and_v4_upgrade(self):
+        old = self.store.save_run("run_000001", accepted(), expected_revision=0)
+        old["schema_version"] = 4
+        for field in ("start_non_waggle_frame", "end_non_waggle_frame", "start_not_visible", "end_not_visible"):
+            old["clips"]["run_000001"]["annotation"].pop(field)
+        raw = json.dumps(old).encode()
+        self.path.write_bytes(raw)
+        store = MasterStore(self.path, self.clips)
+        a = store.get_master()["clips"]["run_000001"]["annotation"]
+        self.assertIsNone(a["start_non_waggle_frame"])
+        a.update(start_frame=2, end_frame=2, start_non_waggle_frame=0, end_non_waggle_frame=4)
+        saved = store.save_run("run_000001", a, expected_revision=1)
+        self.assertEqual(MasterStore(self.path, self.clips).get_master(), saved)
+        self.assertEqual(self.path.with_name(self.path.name + ".v4-boundary-intervals-backup-r1.json").read_bytes(), raw)
 
     def test_revision_conflict_keeps_previous_save(self):
         saved = self.store.save_run("run_000001", accepted(), expected_revision=0)

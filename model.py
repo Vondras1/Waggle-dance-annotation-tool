@@ -20,6 +20,8 @@ import warnings
 import uuid
 
 
+from .angles import direction_from_centers
+
 from .config import (
     SUPPORTED_CLIP_SCHEMA_VERSIONS, MASTER_SCHEMA_VERSION, COORDINATE_SPACE, YOLO_CLASS_ID,
     LEGACY_ANGLE_CONVENTION, ANGLE_CONVENTION, STATUSES,
@@ -158,10 +160,15 @@ def default_annotation(metadata):
     return {
         "start_frame": nearest(run["start_time_s"]),
         "end_frame": nearest(run["end_time_s"]),
+        "start_non_waggle_frame": None,
+        "end_non_waggle_frame": None,
+        "start_not_visible": False,
+        "end_not_visible": False,
         "status": "unreviewed",
         "uncertain": False,
         "notes": "",
         "direction_deg": None,
+        "direction_mode": "auto",
         "keyframes": [],
         "excluded_frames": [],
     }
@@ -176,6 +183,19 @@ def validate_annotation(annotation, metadata):
     end = _integer(annotation.get("end_frame"), "end_frame", 0)
     if start > end or end >= metadata["frame_count"]:
         raise ValueError("Run frame bounds must be ordered and inside the clip (inclusive)")
+    boundaries = {}
+    for side, bound in (("start", start), ("end", end)):
+        field = f"{side}_non_waggle_frame"
+        marker = annotation.get(field)
+        missing = _boolean(annotation.get(f"{side}_not_visible", False), f"{side}_not_visible")
+        if marker is not None:
+            _integer(marker, field, 0)
+            if marker >= metadata["frame_count"] or (marker >= bound if side == "start" else marker <= bound):
+                raise ValueError(f"{field} must be inside the clip and strictly outside the definite waggle interval")
+            if missing:
+                raise ValueError(f"{side} cannot have both an interval and a not-visible boundary")
+        boundaries[field] = marker
+        boundaries[f"{side}_not_visible"] = missing
     status = annotation.get("status", "unreviewed")
     if not isinstance(status, str) or status not in STATUSES:
         raise ValueError("status must be unreviewed, accepted, or rejected")
@@ -220,13 +240,24 @@ def validate_annotation(annotation, metadata):
     active = [frame for frame in range(start, end + 1) if frame not in excluded]
     if status == "accepted" and not uncertain and (not active or not normalized or normalized[0]["frame"] > active[0] or normalized[-1]["frame"] < active[-1]):
         raise ValueError("Accepted runs need box keyframes at or before the start and at or after the end; add endpoint boxes first")
+    direction = _angle(annotation.get("direction_deg"), "direction_deg")
+    # Preserve old hand-set directions; new/unset runs default to automatic.
+    direction_mode = annotation.get("direction_mode", "manual" if direction is not None else "auto")
+    if direction_mode not in ("auto", "manual"):
+        raise ValueError("direction_mode must be auto or manual")
+    if direction_mode == "auto":
+        centers = [((k["bbox"][0] + k["bbox"][2]) / 2, (k["bbox"][1] + k["bbox"][3]) / 2)
+                   for k in normalized if start <= k["frame"] <= end]
+        direction = direction_from_centers(centers)
     return {
         "start_frame": start,
         "end_frame": end,
+        **boundaries,
         "status": status,
         "uncertain": uncertain,
         "notes": _string(annotation.get("notes", ""), "notes"),
-        "direction_deg": _angle(annotation.get("direction_deg"), "direction_deg"),
+        "direction_deg": direction,
+        "direction_mode": direction_mode,
         "keyframes": normalized,
         "excluded_frames": excluded,
     }
@@ -247,7 +278,12 @@ def materialize(annotation, metadata):
     offset_x = metadata["run"]["bbox_x_min_px"]
     offset_y = metadata["run"]["bbox_y_min_px"]
     result = []
-    for frame in range(annotation["start_frame"], annotation["end_frame"] + 1):
+    first = annotation["start_non_waggle_frame"]
+    last = annotation["end_non_waggle_frame"]
+    first = annotation["start_frame"] if first is None else first + 1
+    last = annotation["end_frame"] if last is None else last - 1
+    for frame in range(first, last + 1):
+        boundary_uncertain = frame < annotation["start_frame"] or frame > annotation["end_frame"]
         if frame in annotation["excluded_frames"]:
             continue
         right_index = bisect_left(key_indices, frame)
@@ -275,7 +311,8 @@ def materialize(annotation, metadata):
             "bbox_clip": box,
             "bbox_original": [box[0] + offset_x, box[1] + offset_y, box[2] + offset_x, box[3] + offset_y],
             "orientation_deg": orientation,
-            "uncertain": annotation["uncertain"] or left["uncertain"] or right["uncertain"],
+            "uncertain": boundary_uncertain or annotation["uncertain"] or left["uncertain"] or right["uncertain"],
+            "boundary_uncertain": boundary_uncertain,
             "provenance": provenance,
         })
     return result
@@ -336,7 +373,7 @@ class MasterStore:
             except (ValueError, OSError) as exc:
                 raise ValueError(f"Cannot load master annotations at {self.path}: {exc}") from exc
             if (not isinstance(saved, dict) or type(saved.get("schema_version")) is not int
-                    or saved["schema_version"] not in (1, 2, 3, MASTER_SCHEMA_VERSION)):
+                    or saved["schema_version"] not in (1, 2, 3, 4, MASTER_SCHEMA_VERSION)):
                 raise ValueError("Unsupported master annotation schema_version")
             if saved["schema_version"] == 1 and saved.get("angle_convention") == LEGACY_ANGLE_CONVENTION:
                 if not isinstance(saved.get("clips"), dict):
@@ -359,6 +396,10 @@ class MasterStore:
             if saved["schema_version"] == 3:
                 self._legacy_backup = original_bytes
                 self._backup_kind = "v3-box-exclusions"
+                saved["schema_version"] = MASTER_SCHEMA_VERSION
+            if saved["schema_version"] == 4:
+                self._legacy_backup = original_bytes
+                self._backup_kind = "v4-boundary-intervals"
                 saved["schema_version"] = MASTER_SCHEMA_VERSION
             if saved.get("coordinate_space") != COORDINATE_SPACE or saved.get("angle_convention") != ANGLE_CONVENTION:
                 raise ValueError("Master coordinate space or angle convention differs from this tool")
