@@ -143,6 +143,11 @@ save.
 
 The full-comb view shows accepted runs in original image coordinates. Select
 related runs and assign them to a named dance. A run can belong to one dance.
+Each dance has a distinct color shared by all its runs' arrows, trajectories, and
+run labels. Ungrouped runs share a separate color. Selected runs keep their dance
+colors and gain thicker strokes. **Show only this dance**
+on a dance card filters the comb and run list to its members. Only one dance can
+be shown at a time; uncheck it to show all dances again. Time filters still apply.
 
 For a comb-image background, provide an undistorted full-resolution image:
 

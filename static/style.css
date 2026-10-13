@@ -46,6 +46,10 @@
 
 .boundary-controls{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:6px}.boundary-controls label{display:block;margin-bottom:6px}.boundary-controls select{width:100%;margin:5px 0 9px}.boundary-controls [hidden]{display:none}.boundary-controls .text-button{margin-bottom:7px}.transition-band{background:repeating-linear-gradient(135deg,#eab86688 0px,#eab86688 3px,#332b1e 3px,#332b1e 6px)}.boundary-markers{position:absolute;left:6px;right:6px;top:28px}.boundary-marker{position:absolute;transform:translateX(-50%);width:7px;height:7px;min-width:0;padding:0;border:1px solid var(--accent);background:var(--accent);border-radius:50%}.boundary-marker.non-waggle{background:var(--panel)}.scrubber-wrap{height:44px}
 
+.comb-run-chip,.dance-member{border-left:4px solid var(--run-color)}
+.comb-run-chip.selected{border-left-color:var(--run-color)}
+.comb-run-chip::before,.dance-member>button:first-child::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--run-color);margin-right:6px}
+
 /* Slim boundary controls flank the playback controls and slider. */
 .editor-section>.timeline-panel{max-width:900px;display:grid;grid-template-columns:112px minmax(0,1fr) 112px;align-items:center;gap:14px;padding:12px}
 .timeline-center{min-width:0}

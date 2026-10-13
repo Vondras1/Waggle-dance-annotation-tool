@@ -10,7 +10,7 @@ const fmt = value => Number(value).toFixed(3);
 const state = {project: null, id: null, draft: null, frame: 0, loadedFrame: -1,
   image: null, playbackRate: 1, imageToken: 0, tool: "box", drag: null, dirty: false, version: 0,
   saving: null, timer: null, conflict: false, playing: false, playToken: 0,
-  view: "runs", switching: false, selected: new Set(), combImage: null, combPoints: [], dancePending: 0,
+  view: "runs", switching: false, selected: new Set(), combImage: null, combPoints: [], dancePending: 0, danceFilter: null,
   brightness: 100, histogramContrast: 0, enhancedFrameCache: null,
   boxSettingsKey: null, bboxSize: 64, fixedBbox: false};
 let danceQueue = Promise.resolve();
@@ -817,17 +817,27 @@ async function setView(view) {
   }
 }
 function visibleRuns() {
+  const dance = state.project.dances.find(d => d.id === state.danceFilter);
+  if (!dance) state.danceFilter = null;
   const from = $("comb-time-start").value === "" ? -Infinity : Number($("comb-time-start").value);
   const to = $("comb-time-end").value === "" ? Infinity : Number($("comb-time-end").value);
   return state.project.clips.filter(c => c.annotation.status === "accepted" && c.frames.length &&
+    (!dance || dance.run_ids.includes(c.id)) &&
     c.frames[c.frames.length-1].source_time_s >= from && c.frames[0].source_time_s <= to &&
     (!$("comb-ungrouped").checked || !memberDance(c.id)));
 }
-function danceColor(id) {
-  const palette = CONFIG.dancePalette;
-  let hash = 0;
-  for (const char of id || "") hash = ((hash * 31) + char.charCodeAt(0)) >>> 0;
-  return palette[hash % palette.length];
+function runColor(id) {
+  // Use the full dance list so filtering and selection preserve shared dance colors.
+  const index = state.project.dances.findIndex(d => d.run_ids.includes(id));
+  if (index < 0) return CONFIG.ungroupedRunColor;
+  const palette = ["#56b4ff", "#ff9f43", "#e879f9", "#5ee38b", "#ffe45e",
+    "#ff6b7a", "#45e0df", "#b49aff", "#f5f5f5", "#c5dc65"];
+  return palette[index] || `hsl(${((index * 137.508) % 360).toFixed(3)} 85% 68%)`;
+}
+function filterDance(id) {
+  state.danceFilter = state.danceFilter === id ? null : id;
+  if (state.danceFilter) $("comb-ungrouped").checked = false;
+  renderComb(); renderDances();
 }
 function renderComb() {
   const runs = visibleRuns();
@@ -847,6 +857,7 @@ function renderComb() {
     const node = button(`${runLabel(c)} · ${fmt(c.frames[0].source_time_s)} s${dance ? " · "+dance.name : ""}`,
       `comb-run-chip${state.selected.has(c.id) ? " selected" : ""}`, () => toggleSelection(c.id));
     node.setAttribute("aria-pressed", String(state.selected.has(c.id)));
+    node.style.setProperty("--run-color", runColor(c.id));
     node.title = "Click to toggle selection; double-click to review this run";
     node.addEventListener("dblclick", () => safely(async () => { await setView("runs"); await selectRun(c.id); }));
     $("comb-run-list").append(node);
@@ -878,15 +889,15 @@ function drawComb() {
   state.combPoints = [];
   const scale = width / Math.max(CONFIG.combMinDisplayWidth, canvas.getBoundingClientRect().width);
   for (const c of visibleRuns()) {
-    const selected = state.selected.has(c.id), dance = memberDance(c.id);
-    const color = selected ? CONFIG.selectedRunColor : dance ? danceColor(dance.id) : CONFIG.ungroupedRunColor;
+    const selected = state.selected.has(c.id);
+    const color = runColor(c.id);
     const points = c.frames.map(f => [(f.bbox_original[0]+f.bbox_original[2])/2,(f.bbox_original[1]+f.bbox_original[3])/2]);
     state.combPoints.push({id:c.id,points});
     ctx.strokeStyle = color; ctx.lineWidth = (selected ? 4 : 2) * scale;
     ctx.beginPath(); points.forEach((p,i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p));ctx.stroke();
     const middle = points[Math.floor(points.length/2)];
     ctx.beginPath();ctx.arc(...middle,(selected ? 8 : 5)*scale,0,2*Math.PI);ctx.fillStyle=color;ctx.fill();
-    arrow(ctx,...middle,c.annotation.direction_deg,32*scale,color,2*scale);
+    arrow(ctx,...middle,c.annotation.direction_deg,32*scale,color,(selected ? 3 : 2)*scale);
     ctx.font = `${12*scale}px sans-serif`;
     const text = runLabel(c).replace("Run ", ""), x = middle[0]+10*scale, y=middle[1]-10*scale;
     ctx.lineWidth = 3*scale;ctx.strokeStyle=CONFIG.combBackground;ctx.strokeText(text,x,y);ctx.fillText(text,x,y);
@@ -906,7 +917,7 @@ function saveDances(transform) {
     const response = await api("/api/dances", "PUT", {dances:result, revision:state.project.revision});
     state.project = await response.json();
     saveStatus("All changes saved");
-    renderDances(); renderComb(); renderRunList();
+    renderComb(); renderDances(); renderRunList();
   };
   danceQueue = danceQueue.catch(() => {}).then(action).catch(e => {
     saveStatus("Dance save failed", "error");
@@ -920,7 +931,7 @@ function renderDances() {
   $("dance-count").textContent = state.project.dances.length;
   for (const dance of state.project.dances) {
     const option = el("option", dance.name || dance.id);option.value=dance.id;target.append(option);
-    const card = el("div", undefined, "dance-card");
+    const card = el("div", undefined, `dance-card${state.danceFilter === dance.id ? " active" : ""}`);
     const heading = el("div", undefined, "dance-card-heading");
     const name = el("input");name.value=dance.name;name.maxLength=CONFIG.danceNameMaxLength;name.setAttribute("aria-label", "Dance name");
     name.addEventListener("change", () => safely(() => saveDances(ds => {ds.find(d=>d.id===dance.id).name=name.value;})));
@@ -933,6 +944,7 @@ function renderDances() {
     const members = el("div", undefined, "dance-members");
     for (const id of dance.run_ids) {
       const clip = state.project.clips.find(c=>c.id===id), member=el("span",undefined,"dance-member");
+      member.style.setProperty("--run-color", runColor(id));
       member.append(button(runLabel(clip), "", () => toggleSelection(id)),
         button("×", "", () => saveDances(ds => ds.map(d=>d.id===dance.id ? {...d,run_ids:d.run_ids.filter(r=>r!==id)} : d).filter(d=>d.run_ids.length))));
       member.lastChild.title = "Remove run; removing the last run also deletes this empty dance";
@@ -940,10 +952,10 @@ function renderDances() {
       members.append(member);
     }
     card.append(members);
-    const uncertainLabel = el("label",undefined,"checkbox-field"), uncertain=el("input");
-    uncertain.type="checkbox";uncertain.checked=dance.uncertain;
-    uncertain.addEventListener("change",()=>safely(()=>saveDances(ds=>{ds.find(d=>d.id===dance.id).uncertain=uncertain.checked;})));
-    uncertainLabel.append(uncertain,el("span","Uncertain dance"));card.append(uncertainLabel);
+    const filterLabel = el("label",undefined,"checkbox-field"), filter=el("input");
+    filter.type="checkbox";filter.checked=state.danceFilter === dance.id;
+    filter.addEventListener("change",()=>filterDance(dance.id));
+    filterLabel.append(filter,el("span","Show only this dance"));card.append(filterLabel);
     const notes=el("textarea");notes.value=dance.notes;notes.placeholder="Dance notes…";notes.rows=2;notes.setAttribute("aria-label","Dance notes");
     notes.addEventListener("change",()=>safely(()=>saveDances(ds=>{ds.find(d=>d.id===dance.id).notes=notes.value;})));
     card.append(notes,button("Select all members","text-button",()=>{state.selected=new Set(dance.run_ids);renderComb();}));
@@ -1022,7 +1034,7 @@ async function changeFolders(event) {
     state.imageToken++;state.playToken++;
     state.project = project;state.id = null;state.draft = null;
     state.image = null;state.loadedFrame = -1;state.combImage = null;
-    state.dirty = false;state.conflict = false;state.selected.clear();
+    state.dirty = false;state.conflict = false;state.selected.clear();state.danceFilter = null;
     $("run-search").value = "";$("run-filter").value = "all";
     $("comb-time-start").value = "";$("comb-time-end").value = "";$("comb-ungrouped").checked = false;
     $("save-confirmation").textContent = "";$("error-banner").hidden = true;
@@ -1164,7 +1176,11 @@ function bindEvents() {
   });
   on("frame-canvas","pointerdown",beginDrag);on("frame-canvas","pointermove",moveDrag);on("frame-canvas","pointerup",endDrag);
   on("frame-canvas","pointercancel",()=>{state.drag=null;drawFrame();});
-  for(const id of ["comb-time-start","comb-time-end","comb-ungrouped"])on(id,"change",renderComb);
+  for(const id of ["comb-time-start","comb-time-end"])on(id,"change",renderComb);
+  on("comb-ungrouped","change",()=>{
+    if ($("comb-ungrouped").checked) state.danceFilter = null;
+    renderComb(); renderDances();
+  });
   on("comb-select-visible","click",()=>{visibleRuns().forEach(c=>state.selected.add(c.id));renderComb();});
   on("comb-clear-selection","click",()=>{state.selected.clear();renderComb();});
   on("create-dance","click",()=>groupSelection());on("add-to-dance","click",()=>groupSelection(true));
