@@ -2,7 +2,8 @@
 
 A local browser tool for annotating waggle runs, labeling clips, and grouping runs
 into dances. All three modes use one folder of MP4 clips with matching JSON
-sidecars. Annotation is manual; automatic direction is calculated from your boxes.
+sidecars. Annotation is manual, with automatic box interpolation between keyframes
+and run direction calculated from your annotated boxes.
 
 ![Run review interface](guide/screen_main.png)
 
@@ -60,7 +61,7 @@ Use **+ Add run** for multiple runs in one clip and **Save clip & next** to cont
 <details open>
 <summary>Annotated controls — Run review (click to enlarge)</summary>
 
-[![Run review controls](guide/annotated/full-resolution/01-run-review.png)](guide/annotated/full-resolution/01-run-review.png)
+[![Run review controls](guide/annotated/01-run-review.png)](guide/annotated/full/01-run-review.png)
 
 </details>
 
@@ -73,7 +74,7 @@ immediately. Labels marked **from 01** come from Run review (only when relevant)
 <details>
 <summary>Annotated controls — Run / no run (click to enlarge)</summary>
 
-[![Run / no run controls](guide/annotated/full-resolution/02-run-no-run.png)](guide/annotated/full-resolution/02-run-no-run.png)
+[![Run / no run controls](guide/annotated/02-run-no-run.png)](guide/annotated/02-run-no-run.png)
 
 </details>
 
@@ -87,12 +88,10 @@ notes or uncertainty flags, and download dance memberships as JSON.
 <details>
 <summary>Annotated controls — Dances (click to enlarge)</summary>
 
-[![Dance assembly controls](guide/annotated/full-resolution/03-dances.png)](guide/annotated/full-resolution/03-dances.png)
+[![Dance assembly controls](guide/annotated/03-dances.png)](guide/annotated/03-dances.png)
 
 </details>
 
-[All full-resolution PNGs, SVGs, and PDFs](guide/annotated/full-resolution/README.md)
-· [Earlier annotated PNGs](guide/annotated/README.md).
 The background warning visible in the Dances screenshot is from an older version.
 
 ## Saving and export
