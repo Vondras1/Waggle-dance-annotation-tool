@@ -14,10 +14,7 @@ import uuid
 
 from .media import CombImage, FrameReader
 from .model import MasterStore, discover_clips, yolo_rows
-<<<<<<< Updated upstream
-=======
 from .review import ClipReview
->>>>>>> Stashed changes
 
 
 from . import config
@@ -49,10 +46,7 @@ class Application:
         self.comb = CombImage(self.clips, image_path=comb_image, bag_path=bag)
         self.lock = threading.RLock()
         self.project_id = uuid.uuid4().hex
-<<<<<<< Updated upstream
-=======
         self.clip_review = None
->>>>>>> Stashed changes
 
     def project(self):
         with self.lock:
@@ -64,12 +58,8 @@ class Application:
                 "angle_convention": master["angle_convention"],
                 "comb": self.comb.info(), "clips_dir": str(self.clips_dir),
                 "master_path": str(self.master_path),
-<<<<<<< Updated upstream
-                "bbox_size": self.bbox_size,
-=======
                 "bbox_size": self.bbox_size, "review_example": str(config.EXAMPLE_CLIPS_DIR),
                 "review_example_save": str(config.EXAMPLE_CLIPS_DIR.parent / config.ANNOTATIONS_DIR_NAME),
->>>>>>> Stashed changes
                 "save_dir": str(self.master_path.parent), "project_id": self.project_id,
                 "supports_multiple_runs": True, "supports_box_exclusions": True,
                 "annotation_api_version": config.ANNOTATION_API_VERSION,
@@ -310,8 +300,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(self.app.project())
         elif path == "/api/master":
             self.send_json(self.app.store.get_master(), filename=config.MASTER_FILENAME)
-<<<<<<< Updated upstream
-=======
         elif path == "/api/review":
             self.send_json(self.app.review_project())
         elif path.startswith("/api/review/frame/"):
@@ -324,7 +312,6 @@ class Handler(BaseHTTPRequestHandler):
             if len(parts) != 6:
                 raise ValueError('Expected /api/review/frame/clip_id/frame_index')
             self.send_bytes(self.app.clip_review.reader.frame(parts[4], int(parts[5])), 'image/jpeg')
->>>>>>> Stashed changes
         elif path == "/api/comb":
             self.send_bytes(self.app.comb.get(), "image/jpeg")
         elif path.startswith("/api/frame/"):
@@ -348,15 +335,12 @@ class Handler(BaseHTTPRequestHandler):
         if not self.project_matches(payload):
             return
         with self.app.lock:
-<<<<<<< Updated upstream
-=======
             if path == "/api/review":
                 self.app.review_project()
                 if self.app.clip_review is None:
                     raise ValueError("Open a clips folder first")
                 self.send_json(self.app.clip_review.save(payload))
                 return
->>>>>>> Stashed changes
             revision = payload.get("revision")
             if type(revision) is not int or revision != self.app.store.get_master()["revision"]:
                 self.send_json({"error": "Annotations changed in another window. Reload before saving."},
@@ -379,16 +363,12 @@ class Handler(BaseHTTPRequestHandler):
         payload = self.body()
         if not self.project_matches(payload):
             return
-<<<<<<< Updated upstream
-        if path in ("/api/runs/add", "/api/runs/delete"):
-=======
         if path == "/api/review/open":
             root = payload.get('root')
             if root is not None and Path(root).expanduser().resolve() != self.app.clips_dir:
                 raise ValueError('All modes share one clips folder; use Folders to change it')
             self.send_json(self.app.review_project())
         elif path in ("/api/runs/add", "/api/runs/delete"):
->>>>>>> Stashed changes
             if payload.get("revision") != self.app.store.get_master()["revision"]:
                 self.send_json({"error": "Annotations changed. Reload before adding or deleting a run."}, status=409)
                 return
