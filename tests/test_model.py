@@ -193,6 +193,7 @@ class InterpolationTests(unittest.TestCase):
     def test_angle_normalization_and_sorted_keys(self):
         annotation = accepted()
         annotation["direction_deg"] = -90
+        annotation["direction_mode"] = "manual"
         annotation["keyframes"].reverse()
         annotation["keyframes"][0]["orientation_deg"] = 370
         result = validate_annotation(annotation, metadata())
@@ -298,6 +299,7 @@ class StorageTests(unittest.TestCase):
         old = self.store.save_run("run_000001", accepted(), expected_revision=0)
         old["schema_version"] = 1
         old["angle_convention"] = LEGACY_ANGLE_CONVENTION
+        old["clips"]["run_000001"]["annotation"].pop("direction_mode", None)
         old["clips"]["run_000001"]["annotation"]["direction_deg"] = 270
         old["clips"]["run_000001"]["annotation"]["keyframes"][0]["orientation_deg"] = 350
         original = json.dumps(old).encode()

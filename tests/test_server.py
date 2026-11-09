@@ -150,7 +150,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(saved["keyframes"], [])
 
     def test_run_dance_and_reload_round_trip(self):
-        self.assertEqual(self.app.project()["annotation_api_version"], 5)
+        self.assertEqual(self.app.project()["annotation_api_version"], 7)
         status, _, content = self.save(self.accepted())
         self.assertEqual(status, 200, content)
         project = json.loads(content)

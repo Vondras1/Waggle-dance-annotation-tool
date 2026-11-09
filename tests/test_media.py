@@ -163,12 +163,23 @@ class CombImageTests(unittest.TestCase):
                 "bag": directory, "topic": "/my/image", "camera_info_topic": "/my/info",
             }}}}
             with patch("annotation_tool.media._calibrated_frames", return_value=frames()) as reader:
-                comb = CombImage(clips)
+                comb = CombImage(clips, bag_path=directory)
                 self.assertTrue(comb.prepare()["available"])
                 self.assertEqual((comb.info()["width"], comb.info()["height"]), (320, 180))
                 comb.get()
-                reader.assert_called_once_with(directory, "/my/image", "/my/info")
+                reader.assert_called_once_with(Path(directory), "/my/image", "/my/info")
                 self.assertEqual(events, ["read", "closed"])
+
+    def test_default_comb_never_reads_source_bag_or_loads_images(self):
+        clips = {"run": {"metadata": {"source": {"bag": "/missing/source/bag"}}}}
+        with patch("annotation_tool.media._calibrated_frames") as reader, \
+                patch("annotation_tool.media._opencv") as opencv:
+            comb = CombImage(clips)
+            self.assertFalse(comb.info()["available"])
+            self.assertIn("Coordinate canvas", comb.info()["message"])
+            comb.prepare()
+            reader.assert_not_called()
+            opencv.assert_not_called()
 
     def test_missing_ros_keeps_clips_independent_and_reports_image_fallback(self):
         with tempfile.TemporaryDirectory() as directory:

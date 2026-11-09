@@ -69,3 +69,25 @@
 .boundary-help summary{cursor:pointer;width:fit-content}
 .boundary-help .field-help{margin-bottom:0}
 @media(max-width:1200px){.editor-section>.timeline-panel{grid-template-columns:86px minmax(0,1fr) 86px;gap:8px;padding:9px}.timeline-panel>.boundary-controls:first-child{padding-right:6px}.timeline-panel>.boundary-controls:last-child{padding-left:6px}.timeline-center .frame-jump,.timeline-center .speed-label{margin-left:0}}
+<<<<<<< Updated upstream
+=======
+
+.clip-review-workspace{display:grid;grid-template-columns:260px minmax(0,1fr);min-height:calc(100vh - 82px)}
+.review-canvas-stage{display:flex;justify-content:center;background:#0a0e0a;border:1px solid var(--line);border-radius:8px;overflow:hidden}.review-canvas-stage canvas{display:block;max-width:100%;max-height:55vh;width:auto;height:auto;object-fit:contain}#review-timeline{width:100%;accent-color:var(--accent)}#review-view .canvas-display-controls{flex-wrap:wrap;justify-content:flex-start}#review-view .brightness-control>span,#review-view .histogram-control>span{display:inline}#review-frame-help{min-height:20px;margin:8px 0}
+#review-view .checkbox-field{margin-top:20px}#review-list .run-card{width:100%}
+#dance-save-location{overflow-wrap:anywhere}
+@media(max-width:760px){.clip-review-workspace{grid-template-columns:150px minmax(0,1fr)}}
+
+/* Keep clip review independent of the annotation editor's boundary-column layout. */
+.clip-review-workspace{grid-template-rows:1fr}
+.clip-review-workspace>.run-sidebar{grid-row:1;grid-column:1}
+.clip-review-workspace>.editor-section{grid-row:1;grid-column:2;min-width:0}
+#review-view .editor-section>.timeline-panel{display:block;max-width:900px;padding:14px 16px}
+#review-view .playback-row{gap:12px;margin-bottom:12px}
+#review-view .canvas-display-controls{margin-left:0}
+#review-frame-time{font-size:10px;overflow-wrap:anywhere}
+#review-view .save-buttons{flex-wrap:wrap}
+@media(max-width:480px){.clip-review-workspace{grid-template-columns:112px minmax(0,1fr)}#review-view .editor-section>.timeline-panel{padding:10px}}
+
+.review-sidebar-actions{display:flex;justify-content:flex-end;margin-bottom:12px}
+>>>>>>> Stashed changes

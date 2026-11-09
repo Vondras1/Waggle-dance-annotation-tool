@@ -208,6 +208,10 @@ class CombImage:
             if self._prepared:
                 return dict(self._info)
             self._prepared = True
+            if self.image_path is None and self.bag_path is None:
+                self._info = {"available": False, "width": 0, "height": 0,
+                              "message": "Coordinate canvas · no background image loaded."}
+                return dict(self._info)
             try:
                 if self.image_path is not None:
                     image = _opencv().imread(str(self.image_path), _opencv().IMREAD_COLOR)

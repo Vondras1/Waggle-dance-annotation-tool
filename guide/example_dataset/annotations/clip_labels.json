@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "source": "/home/vondras/Documents/dancing_hive/annotation_tool/guide/example_dataset/run_clips",
+  "clips_sha256": "b4f0bc57aa094d148094a1b374ca36ead8e5c67e269cfbefa10d75f09a08b74d",
+  "labels": {
+    "run_000001": {
+      "label": "yes",
+      "updated_at": "2026-11-09T20:36:17.992735+00:00"
+    },
+    "run_000007": {
+      "label": "yes",
+      "updated_at": "2026-11-09T20:36:22.974126+00:00"
+    },
+    "run_000012": {
+      "label": "no",
+      "updated_at": "2026-11-09T20:36:24.879242+00:00"
+    },
+    "run_000021": {
+      "label": "yes",
+      "updated_at": "2026-11-09T20:36:31.990631+00:00"
+    }
+  }
+}

@@ -4,11 +4,11 @@ This local browser tool lets you review detector-generated waggle-run clips,
 mark the bee with bounding boxes, group accepted runs into dances, and export a
 dataset. It works from MP4 clips and their matching JSON sidecars.
 
-![Waggle-run annotation interface](guide/main_screen.png)
+![Waggle-run annotation interface](guide/screen_main.png)
 
 ## Install and start
 
-From the repository root, create and activate a Python 3.10+ environment, then
+From the parent directory containing `annotation_tool`, create and activate a Python 3.10+ environment, then
 install the dependency:
 
 ```bash
@@ -139,15 +139,65 @@ Keyboard controls: **←/→** step a frame, **Shift+←/→** step ten frames,
 **Space** play/pause, **B** box mode, **D** direction mode, and **Ctrl/Cmd+S**
 save.
 
+<<<<<<< Updated upstream
 ## Group runs into dances - Not fully finished
+=======
+## 02 Run / no run: manually review clips
+
+All three modes share the clips folder selected in **Folders** or `--clips-dir`.
+Mode 02 shows the same clips as mode 01; it has no separate source path.
+No detection models or predicted boxes are loaded.
+
+Mode 01 annotations automatically determine the mode 02 label: any accepted run
+makes the clip **Run**; if its accepted runs are all uncertain, the clip is **Unsure**.
+A clip is **No run** only when every run in it is rejected. Partial reviews with no
+accepted run leave the clip's manual label unchanged. Inherited labels show
+**from 01** and must be changed in Run review. Switching to mode 02 refreshes them.
+Inheritance reads `master.json` directly and does not overwrite manual labels.
+
+For clips without an inherited label, choose **Run**, **No run**, or **Unsure**, or
+press **1**, **2**, or **3**. Manual labels save to `annotations/clip_labels.json`
+beside the shared clips folder. Automatic advance can be disabled. Filters show
+each effective label or unreviewed clips. The **⟳** icon at the top of the left
+sidebar rereads saved labels and Run review statuses without saving annotations
+or changing the current frame.
+
+Use play/pause, the frame number, the timeline, or **←/→** to navigate frames;
+**Shift+←/→** steps ten frames. Playback speed ranges from 0.25× to 2×.
+**Brightness** and **Hist. contrast** use the same display processing as mode 01,
+with shared settings and reset buttons. Original clips and exports are unchanged.
+
+Run/no-run labels describe whole clips; they do not create box annotations or
+make clips eligible for YOLO export or dance grouping. Use mode 01 for those.
+
+## 03 Dances: connect related runs
+
+Group manually annotated, accepted runs from mode 01. Select related runs, name
+the dance, and use **Group selected runs** or add them to an existing dance.
+Dance names, notes, uncertainty, and memberships save in `master.json`.
+**Download dances JSON** exports the dance memberships.
+>>>>>>> Stashed changes
 
 The full-comb view shows accepted runs in original image coordinates. Select
 related runs and assign them to a named dance. A run can belong to one dance.
 Each dance has a distinct color shared by all its runs' arrows, trajectories, and
 run labels. Ungrouped runs share a separate color. Selected runs keep their dance
+<<<<<<< Updated upstream
 colors and gain thicker strokes. **Show only this dance**
 on a dance card filters the comb and run list to its members. Only one dance can
 be shown at a time; uncheck it to show all dances again. Time filters still apply.
+=======
+colors and gain thicker strokes. Check **Show this dance** on one or more cards
+to display their combined members in the comb and run list. Clear all checks or
+click **Show all dances** to show all runs again. Time filters still apply.
+
+To merge dances, check **Select for merge** on two or more cards, choose the
+existing dance name to keep in **Merge into**, then click **Merge selected dances**.
+The chosen dance keeps its ID and name, takes all selected dances' runs and notes,
+and stays uncertain if any selected dance was uncertain. Other selected dance
+cards are replaced by the merged dance. Display filters follow the merged dance.
+Merging preserves the manually annotated runs in each selected dance.
+>>>>>>> Stashed changes
 
 For a comb-image background, provide an undistorted full-resolution image:
 
@@ -155,9 +205,9 @@ For a comb-image background, provide an undistorted full-resolution image:
 python -m annotation_tool --comb-image path/to/full_comb_undistorted.png
 ```
 
-Without an image, the tool still works with a coordinate canvas. Automatic
-background extraction from a ROS bag is optional and is not needed for normal
-clip annotation.
+By default, the tool uses a coordinate canvas and does not load a background
+photo or read the source ROS bag. Background loading only happens if explicitly
+requested with `--comb-image` or `--bag`.
 
 ## Export
 
@@ -180,4 +230,9 @@ node annotation_tool/tests/test_box_deletion.js
 node annotation_tool/tests/test_fixed_bbox.js
 node annotation_tool/tests/test_uncertain_run.js
 node annotation_tool/tests/test_boundary_intervals.js
+<<<<<<< Updated upstream
+=======
+node annotation_tool/tests/test_dances.js
+node annotation_tool/tests/test_clip_review.js
+>>>>>>> Stashed changes
 ```

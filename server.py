@@ -14,6 +14,10 @@ import uuid
 
 from .media import CombImage, FrameReader
 from .model import MasterStore, discover_clips, yolo_rows
+<<<<<<< Updated upstream
+=======
+from .review import ClipReview
+>>>>>>> Stashed changes
 
 
 from . import config
@@ -45,6 +49,10 @@ class Application:
         self.comb = CombImage(self.clips, image_path=comb_image, bag_path=bag)
         self.lock = threading.RLock()
         self.project_id = uuid.uuid4().hex
+<<<<<<< Updated upstream
+=======
+        self.clip_review = None
+>>>>>>> Stashed changes
 
     def project(self):
         with self.lock:
@@ -56,11 +64,25 @@ class Application:
                 "angle_convention": master["angle_convention"],
                 "comb": self.comb.info(), "clips_dir": str(self.clips_dir),
                 "master_path": str(self.master_path),
+<<<<<<< Updated upstream
                 "bbox_size": self.bbox_size,
+=======
+                "bbox_size": self.bbox_size, "review_example": str(config.EXAMPLE_CLIPS_DIR),
+                "review_example_save": str(config.EXAMPLE_CLIPS_DIR.parent / config.ANNOTATIONS_DIR_NAME),
+>>>>>>> Stashed changes
                 "save_dir": str(self.master_path.parent), "project_id": self.project_id,
                 "supports_multiple_runs": True, "supports_box_exclusions": True,
                 "annotation_api_version": config.ANNOTATION_API_VERSION,
             }
+
+    def review_project(self):
+        if not self.clips:
+            return None
+        if self.clip_review is None:
+            self.clip_review = ClipReview(self.clips_dir, clips=self.clips,
+                                          master=lambda: MasterStore(self.master_path, self.clips).get_master()
+                                          if self.master_path.exists() else self.store.get_master())
+        return self.clip_review.project()
 
     def open_project(self, clips_dir, save_dir):
         """Validate a replacement completely before releasing the current project."""
@@ -91,10 +113,13 @@ class Application:
                     else:
                         candidate.store.save_dances([], expected_revision=0)
                 old_reader = self.reader
+                old_review = self.clip_review
                 for name in ("clips_dir", "bbox_size", "master_path", "clips", "store", "reader",
-                             "comb_image_path", "bag_path", "comb", "project_id"):
+                             "comb_image_path", "bag_path", "comb", "project_id", "clip_review"):
                     setattr(self, name, getattr(candidate, name))
                 old_reader.close()
+                if old_review:
+                    old_review.close()
                 return self.project()
             except BaseException:
                 candidate.close()
@@ -115,6 +140,9 @@ class Application:
                 comb = CombImage(clips, image_path=self.comb_image_path, bag_path=self.bag_path)
                 comb.prepare()
             self.reader.close()
+            if self.clip_review:
+                self.clip_review.close()
+                self.clip_review = None
             self.clips, self.store, self.reader, self.comb = clips, store, reader, comb
             return self.project()
 
@@ -166,6 +194,8 @@ class Application:
 
     def close(self):
         self.reader.close()
+        if self.clip_review:
+            self.clip_review.close()
 
 
 
@@ -280,6 +310,21 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(self.app.project())
         elif path == "/api/master":
             self.send_json(self.app.store.get_master(), filename=config.MASTER_FILENAME)
+<<<<<<< Updated upstream
+=======
+        elif path == "/api/review":
+            self.send_json(self.app.review_project())
+        elif path.startswith("/api/review/frame/"):
+            if self.app.clip_review is None:
+                raise ValueError("Open a clips folder first")
+            query = dict(parse_qsl(urlsplit(self.path).query))
+            if query.get('root') != str(self.app.clip_review.root):
+                raise ValueError('Review folder changed; reload before viewing')
+            parts = path.split('/')
+            if len(parts) != 6:
+                raise ValueError('Expected /api/review/frame/clip_id/frame_index')
+            self.send_bytes(self.app.clip_review.reader.frame(parts[4], int(parts[5])), 'image/jpeg')
+>>>>>>> Stashed changes
         elif path == "/api/comb":
             self.send_bytes(self.app.comb.get(), "image/jpeg")
         elif path.startswith("/api/frame/"):
@@ -303,6 +348,15 @@ class Handler(BaseHTTPRequestHandler):
         if not self.project_matches(payload):
             return
         with self.app.lock:
+<<<<<<< Updated upstream
+=======
+            if path == "/api/review":
+                self.app.review_project()
+                if self.app.clip_review is None:
+                    raise ValueError("Open a clips folder first")
+                self.send_json(self.app.clip_review.save(payload))
+                return
+>>>>>>> Stashed changes
             revision = payload.get("revision")
             if type(revision) is not int or revision != self.app.store.get_master()["revision"]:
                 self.send_json({"error": "Annotations changed in another window. Reload before saving."},
@@ -325,7 +379,16 @@ class Handler(BaseHTTPRequestHandler):
         payload = self.body()
         if not self.project_matches(payload):
             return
+<<<<<<< Updated upstream
         if path in ("/api/runs/add", "/api/runs/delete"):
+=======
+        if path == "/api/review/open":
+            root = payload.get('root')
+            if root is not None and Path(root).expanduser().resolve() != self.app.clips_dir:
+                raise ValueError('All modes share one clips folder; use Folders to change it')
+            self.send_json(self.app.review_project())
+        elif path in ("/api/runs/add", "/api/runs/delete"):
+>>>>>>> Stashed changes
             if payload.get("revision") != self.app.store.get_master()["revision"]:
                 self.send_json({"error": "Annotations changed. Reload before adding or deleting a run."}, status=409)
                 return
@@ -368,7 +431,7 @@ def main(argv=None):
     parser.add_argument("--annotations", type=Path,
                         help="Master JSON path (default: sibling annotations/master.json)")
     parser.add_argument("--comb-image", type=Path,
-                        help="Full-resolution undistorted comb image; otherwise read source ROS bag")
+                        help="Optional full-resolution undistorted comb image (default: coordinate canvas)")
     parser.add_argument("--bag", type=Path, help="Override source bag path for the comb background")
     parser.add_argument("--port", type=int, default=config.SERVER_PORT)
     args = parser.parse_args(argv)
@@ -378,9 +441,6 @@ def main(argv=None):
     try:
         app = Application(args.clips_dir, args.annotations, comb_image=args.comb_image, bag=args.bag, allow_empty=True)
         print(f"Loaded {len(app.clips)} run clips from {app.clips_dir}", flush=True)
-        print("Preparing full-comb background…", flush=True)
-        comb = app.comb.info()
-        print(comb["message"], flush=True)
         with AnnotationServer((config.SERVER_HOST, args.port), app) as server:
             print(f"Open http://localhost:{server.server_port}", flush=True)
             print(f"Master annotations: {app.master_path}", flush=True)

@@ -10,7 +10,14 @@ const fmt = value => Number(value).toFixed(3);
 const state = {project: null, id: null, draft: null, frame: 0, loadedFrame: -1,
   image: null, playbackRate: 1, imageToken: 0, tool: "box", drag: null, dirty: false, version: 0,
   saving: null, timer: null, conflict: false, playing: false, playToken: 0,
+<<<<<<< Updated upstream
   view: "runs", switching: false, selected: new Set(), combImage: null, combPoints: [], dancePending: 0, danceFilter: null,
+=======
+  clipReview: null, reviewId: null, reviewSaving: false, reviewOpening: false,
+  reviewFrame: 0, reviewLoadedFrame: -1, reviewImage: null, reviewImageToken: 0,
+  reviewPlaying: false, reviewPlayToken: 0, reviewSpeed: 1,
+  view: "runs", switching: false, selected: new Set(), combImage: null, combPoints: [], dancePending: 0, danceFilters: new Set(), mergeSelection: new Set(), mergingDances: false,
+>>>>>>> Stashed changes
   brightness: 100, histogramContrast: 0, enhancedFrameCache: null,
   boxSettingsKey: null, bboxSize: 64, fixedBbox: false};
 let danceQueue = Promise.resolve();
@@ -305,7 +312,9 @@ function setBrightness(value) {
   $("frame-brightness").value = brightness;
   $("frame-brightness-value").textContent = `${brightness}%`;
   try { localStorage.setItem(BRIGHTNESS_STORAGE_KEY, String(brightness)); } catch (_) {}
-  drawFrame();
+  $("review-brightness").value = brightness;
+  $("review-brightness-value").textContent = `${brightness}%`;
+  drawFrame();drawReviewFrame();
 }
 function restoreBrightness() {
   let brightness = 100;
@@ -325,7 +334,9 @@ function setHistogramContrast(value) {
   $("histogram-contrast").value = strength;
   $("histogram-contrast-value").textContent = `${strength}%`;
   try { localStorage.setItem(HISTOGRAM_CONTRAST_STORAGE_KEY, String(strength)); } catch (_) {}
-  drawFrame();
+  $("review-contrast").value = strength;
+  $("review-contrast-value").textContent = `${strength}%`;
+  drawFrame();drawReviewFrame();
 }
 
 function restoreHistogramContrast() {
@@ -348,24 +359,24 @@ function restoreHistogramContrast() {
  * The processed image is cached because drawFrame() is also called while
  * dragging annotation geometry.
  */
-function enhancedFrameImage() {
-  if (!state.image || state.histogramContrast <= 0) return state.image;
+function enhancedFrameImage(image = state.image, frame = state.loadedFrame) {
+  if (!image || state.histogramContrast <= 0) return image;
 
   const cached = state.enhancedFrameCache;
   if (cached &&
-      cached.frame === state.loadedFrame &&
+      cached.frame === frame &&
       cached.strength === state.histogramContrast &&
-      cached.image === state.image) {
+      cached.image === image) {
     return cached.canvas;
   }
 
-  const width = state.image.naturalWidth || state.image.width;
-  const height = state.image.naturalHeight || state.image.height;
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
   const offscreen = document.createElement("canvas");
   offscreen.width = width;
   offscreen.height = height;
   const offctx = offscreen.getContext("2d", {willReadFrequently: true});
-  offctx.drawImage(state.image, 0, 0, width, height);
+  offctx.drawImage(image, 0, 0, width, height);
 
   const imageData = offctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
@@ -415,9 +426,9 @@ function enhancedFrameImage() {
   }
 
   state.enhancedFrameCache = {
-    frame: state.loadedFrame,
+    frame: frame,
     strength: state.histogramContrast,
-    image: state.image,
+    image: image,
     canvas: offscreen,
   };
   return offscreen;
@@ -795,17 +806,189 @@ function endDrag(event) {
   }
 }
 
+<<<<<<< Updated upstream
+=======
+
+function danceProject() { return state.project; }
+function danceMember(id) { return danceProject().dances.find(d => d.run_ids.includes(id)); }
+async function reviewDanceRun(id) { await setView("runs");await selectRun(id); }
+const reviewCurrent = () => state.clipReview?.clips.find(c => c.id === state.reviewId);
+function reviewClips() {
+  const filter = $("review-filter").value;
+  return (state.clipReview?.clips || []).filter(c => filter === "all" || (filter === "unreviewed" ? !c.label : c.label === filter));
+}
+async function loadSharedReview() {
+  if (state.reviewSaving || state.reviewOpening) return;
+  pauseReview();state.reviewImageToken++;
+  state.reviewImage = null;state.reviewLoadedFrame = -1;
+  state.reviewOpening = true;renderReview();
+  try {
+    state.clipReview = await (await api("/api/review")).json();
+    const clips = state.clipReview?.clips || [];
+    const id = clips.some(c => c.id === state.reviewId) ? state.reviewId : clips.find(c => !c.label)?.id || clips[0]?.id;
+    await selectReview(id);
+  } finally { state.reviewOpening = false;renderReview(); }
+}
+async function reloadReviewLabels() {
+  if (state.reviewSaving || state.reviewOpening) return;
+  state.reviewOpening = true;renderReview();
+  try {
+    state.clipReview = await (await api("/api/review")).json();
+  } finally { state.reviewOpening = false;renderReview(); }
+}
+function renderReview() {
+  const project = state.clipReview, list = $("review-list"), clip = reviewCurrent();
+  const busy = state.reviewSaving || state.reviewOpening;
+  list.replaceChildren();
+  $("review-open").disabled = busy;
+  $("review-filter").disabled = busy;
+  $("review-progress-count").textContent = project ? `${project.clips.filter(c => c.label).length} / ${project.clips.length} reviewed` : "";
+  for (const c of reviewClips()) {
+    const label = {yes:"Run",no:"No run",uncertain:"Unsure"}[c.label] || "Unreviewed";
+    const node = button(`${runLabel(c)} · ${label}${c.label_source === "run_review" ? " · from 01" : ""}`, `run-card${c.id === state.reviewId ? " selected" : ""}`, () => selectReview(c.id));
+    node.disabled = busy;list.append(node);
+  }
+  if (project && !reviewClips().length) list.append(el("p", "No clips match this filter.", "empty-state"));
+  $("review-title").textContent = clip ? runLabel(clip) : "Select a clip";
+  for (const label of ["yes","no","uncertain"]) {
+    $("review-"+label).disabled = !clip || !state.reviewImage || clip.label_source === "run_review" || busy;
+    $("review-"+label).setAttribute("aria-pressed", String(clip?.label === label));
+  }
+  $("review-inheritance").textContent = clip?.label_source === "run_review" ? "Inherited from Run review (01). Change the annotation there to update this label." : "";
+  const clips = reviewClips(), index = clips.findIndex(c => c.id === state.reviewId);
+  $("review-previous").disabled = busy || index <= 0;
+  $("review-next").disabled = busy || index < 0 || index >= clips.length-1;
+  for (const id of ["review-play", "review-frame-previous", "review-frame-next", "review-frame-number", "review-timeline"]) $(id).disabled = !clip || busy;
+  renderReviewPlayback();
+}
+function renderReviewPlayback() {
+  const clip = reviewCurrent();
+  $("review-frame-number").value = state.reviewFrame;
+  $("review-frame-number").max = Math.max(0, (clip?.metadata.frame_count || 1)-1);
+  $("review-frame-total").textContent = `/ ${Math.max(0, (clip?.metadata.frame_count || 1)-1)}`;
+  $("review-timeline").max = Math.max(0, (clip?.metadata.frame_count || 1)-1);
+  $("review-timeline").value = state.reviewFrame;
+  const m = clip?.metadata;
+  $("review-frame-time").textContent = m ? `Source ${fmt(m.source_frame_times_s[state.reviewFrame])} s · output ${fmt(m.output_frame_times_s[state.reviewFrame])} s` : "";
+}
+function drawReviewFrame() {
+  const canvas = $("review-canvas"), image = state.reviewImage;
+  const ctx = canvas.getContext("2d");
+  if (!image) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+  // Keep the last decoded frame visible while the next frame is loading.
+  if (canvas.width !== image.naturalWidth) canvas.width = image.naturalWidth;
+  if (canvas.height !== image.naturalHeight) canvas.height = image.naturalHeight;
+  ctx.filter = `brightness(${state.brightness / 100})`;
+  ctx.drawImage(enhancedFrameImage(image, state.reviewLoadedFrame), 0, 0);
+  ctx.filter = "none";
+}
+async function selectReview(id) {
+  if (state.reviewSaving) return;
+  pauseReview();
+  const clip = state.clipReview?.clips.find(c => c.id === id);
+  state.reviewId = clip?.id || null;
+  state.reviewImage = null;state.reviewLoadedFrame = -1;state.reviewFrame = 0;
+  state.reviewImageToken++;
+  drawReviewFrame();renderReview();
+  if (clip) await seekReview(0);
+  else $("review-frame-help").textContent = "Choose a clip from the list.";
+}
+async function seekReview(value, fromPlayback = false) {
+  const clip = reviewCurrent();
+  if (!clip) return;
+  if (!fromPlayback) pauseReview();
+  const frame = clamp(Math.round(Number(value) || 0), 0, clip.metadata.frame_count-1);
+  const token = ++state.reviewImageToken;
+  state.reviewFrame = frame;renderReviewPlayback();drawReviewFrame();
+  if (!state.reviewImage) $("review-frame-help").textContent = "Loading frame…";
+  const image = new Image();
+  try {
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error(`Could not load frame ${frame} of ${runLabel(clip)}.`));
+      image.src = `/api/review/frame/${encodeURIComponent(clip.id)}/${frame}?root=${encodeURIComponent(state.clipReview.root)}&project_id=${encodeURIComponent(state.project.project_id)}`;
+    });
+    if (token !== state.reviewImageToken) return;
+    const firstFrame = !state.reviewImage;
+    state.reviewImage = image;state.reviewLoadedFrame = frame;
+    drawReviewFrame();
+    if (firstFrame) {
+      $("review-frame-help").textContent = "Original clip · choose Run, No run, or Unsure.";
+      renderReview();
+    }
+  } catch (e) {
+    if (token !== state.reviewImageToken) return;
+    pauseReview();state.reviewImage = null;state.reviewLoadedFrame = -1;
+    $("review-frame-help").textContent = e.message;drawReviewFrame();renderReview();throw e;
+  }
+}
+function pauseReview() {
+  state.reviewPlaying = false;state.reviewPlayToken++;
+  $("review-play").textContent = "▶";$("review-play").setAttribute("aria-label", "Play");
+}
+async function toggleReviewPlay() {
+  if (state.reviewPlaying) { pauseReview();return; }
+  const clip = reviewCurrent();
+  if (!clip || state.reviewOpening || state.reviewSaving) return;
+  if (state.reviewFrame === clip.metadata.frame_count-1) await seekReview(0);
+  state.reviewPlaying = true;
+  const token = ++state.reviewPlayToken;
+  $("review-play").textContent = "Ⅱ";$("review-play").setAttribute("aria-label", "Pause");
+  try {
+    while (state.reviewPlaying && token === state.reviewPlayToken) {
+      const start = performance.now();
+      if (state.reviewFrame >= clip.metadata.frame_count-1) break;
+      await seekReview(state.reviewFrame+1, true);
+      await new Promise(resolve => setTimeout(resolve, Math.max(0, 1000/(clip.metadata.fps*state.reviewSpeed)-(performance.now()-start))));
+    }
+  } finally { if (token === state.reviewPlayToken) pauseReview(); }
+}
+async function navigateReview(delta) {
+  if (state.reviewSaving || state.reviewOpening) return;
+  const clips = reviewClips(), index = clips.findIndex(c => c.id === state.reviewId);
+  if (clips[index+delta]) await selectReview(clips[index+delta].id);
+}
+async function labelReview(label) {
+  if (!reviewCurrent() || reviewCurrent().label_source === "run_review" || !state.reviewImage || state.reviewSaving || state.reviewOpening) return;
+  const id = state.reviewId, clips = reviewClips(), index = clips.findIndex(c => c.id === id);
+  const nextId = clips[index+1]?.id;
+  pauseReview();state.reviewSaving = true;renderReview();
+  try {
+    state.clipReview = await (await api("/api/review", "PUT", {
+      root:state.clipReview.root, labels_token:state.clipReview.labels_token, clip_id:id, label,
+    })).json();
+    saveStatus("Label saved");
+  } finally { state.reviewSaving = false;renderReview(); }
+  if ($("review-auto-next").checked) {
+    await selectReview(nextId || (reviewClips().some(c => c.id === id) ? id : reviewClips()[0]?.id));
+  }
+}
+
+>>>>>>> Stashed changes
 async function setView(view) {
-  pause();
+  pause();pauseReview();
   await danceQueue.catch(() => {});
   await saveRun();
+  if (view === "review") await loadSharedReview();
   state.view = view;
   $("runs-view").hidden = view !== "runs";
   $("comb-view").hidden = view !== "comb";
+<<<<<<< Updated upstream
   for (const name of ["runs", "comb"]) {
     $("tab-"+name).classList.toggle("active", view === name);
     $("tab-"+name).setAttribute("aria-selected", String(view === name));
   }
+=======
+  $("review-view").hidden = view !== "review";
+  for (const name of ["runs", "review", "comb"]) {
+    $("tab-"+name).classList.toggle("active", view === name);
+    $("tab-"+name).setAttribute("aria-selected", String(view === name));
+  }
+  if (view === "review") renderReview();
+>>>>>>> Stashed changes
   if (view === "comb") {
     renderComb(); renderDances();
     if (!state.combImage && state.project.comb.available) {
@@ -841,7 +1024,13 @@ function filterDance(id) {
 }
 function renderComb() {
   const runs = visibleRuns();
+<<<<<<< Updated upstream
   const validIds = new Set(state.project.clips.filter(c => c.annotation.status === "accepted").map(c => c.id));
+=======
+  $("comb-caption").textContent = "Click a trajectory to toggle selection. Arrows show annotated run directions.";
+  $("dance-footer").textContent = "Each accepted run belongs to at most one dance. Master JSON includes dance memberships and original coordinates.";
+  const validIds = new Set(danceProject().clips.filter(c => c.annotation.status === "accepted").map(c => c.id));
+>>>>>>> Stashed changes
   state.selected = new Set([...state.selected].filter(id => validIds.has(id)));
   $("comb-count").textContent = `${runs.length} accepted runs visible`;
   $("selection-count").textContent = `${state.selected.size} RUN${state.selected.size === 1 ? "" : "S"} SELECTED`;
@@ -926,6 +1115,12 @@ function saveDances(transform) {
   return danceQueue;
 }
 function renderDances() {
+<<<<<<< Updated upstream
+=======
+  pruneDanceSelections();
+  renderMergeControls();
+  $("dance-save-location").textContent = state.project.master_path;
+>>>>>>> Stashed changes
   const list = $("dance-list"), target = $("dance-target"), previous = target.value;
   list.replaceChildren(); target.replaceChildren(el("option", "Choose a dance…"));target.firstChild.value="";
   $("dance-count").textContent = state.project.dances.length;
@@ -1039,6 +1234,8 @@ async function changeFolders(event) {
     $("comb-time-start").value = "";$("comb-time-end").value = "";$("comb-ungrouped").checked = false;
     $("save-confirmation").textContent = "";$("error-banner").hidden = true;
     $("folders-dialog").close();
+    state.reviewId = null;
+    await loadSharedReview();
     await selectRun(project.clips[0].id);
     await setView("runs");
     saveStatus("Project opened");
@@ -1126,6 +1323,32 @@ function bindEvents() {
   on("folders-form", "submit", changeFolders);
   on("error-dismiss","click",()=>{$("error-banner").hidden=true;});
   on("run-search","input",renderRunList);on("run-filter","change",renderRunList);
+<<<<<<< Updated upstream
+=======
+  on("tab-review", "click", () => setView("review"));
+  on("review-open", "click", reloadReviewLabels);
+  on("review-filter", "change", () => selectReview(reviewClips()[0]?.id));
+  on("review-previous", "click", () => navigateReview(-1));
+  on("review-next", "click", () => navigateReview(1));
+  for (const label of ["yes", "no", "uncertain"]) on("review-"+label, "click", () => labelReview(label));
+  on("review-play", "click", toggleReviewPlay);
+  on("review-frame-previous", "click", () => seekReview(state.reviewFrame-1));
+  on("review-frame-next", "click", () => seekReview(state.reviewFrame+1));
+  on("review-frame-number", "change", e => seekReview(e.target.value));
+  on("review-timeline", "input", e => seekReview(e.target.value));
+  on("review-speed", "change", e => { state.reviewSpeed = Number(e.target.value); });
+  on("review-brightness", "input", e => setBrightness(e.target.value));
+  on("review-brightness-reset", "click", () => setBrightness(100));
+  on("review-contrast", "input", e => setHistogramContrast(e.target.value));
+  on("review-contrast-reset", "click", () => setHistogramContrast(0));
+  on("merge-dances", "click", mergeSelectedDances);
+  on("show-all-dances", "click", () => { state.danceFilters.clear();$("comb-ungrouped").checked = false;renderComb();renderDances(); });
+  on("dance-download", "click", async () => {
+    await danceQueue;
+    const project = danceProject();
+    download(new Blob([JSON.stringify({dances: project.dances}, null, 2)], {type:"application/json"}), "dances.json");
+  });
+>>>>>>> Stashed changes
   on("tab-runs","click",()=>setView("runs"));on("tab-comb","click",()=>setView("comb"));
   on("help-open","click",()=>$("help-dialog").showModal());on("export-open","click",()=>{$("export-state").textContent="";$("export-dialog").showModal();});
   on("export-download","click",exportYolo);on("reload-clips","click",reloadProject);
@@ -1193,13 +1416,29 @@ function bindEvents() {
   });
   document.addEventListener("keydown",e=>{
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){e.preventDefault();safely(saveRun);return;}
+<<<<<<< Updated upstream
+=======
+    if (state.view === "review" && !e.target.closest("input,textarea,select,dialog")) {
+      if (state.reviewSaving || state.reviewOpening) return;
+      const labels = {"1":"yes", "2":"no", "3":"uncertain"};
+      if (labels[e.key]) { e.preventDefault();safely(() => labelReview(labels[e.key])); }
+      if (["ArrowLeft", "ArrowRight"].includes(e.key)) {
+        e.preventDefault();safely(() => seekReview(state.reviewFrame+(e.key === "ArrowLeft" ? -1 : 1)*(e.shiftKey ? CONFIG.frameStep : 1)));
+      }
+      if (e.key === " " && !e.target.closest("button")) { e.preventDefault();safely(toggleReviewPlay); }
+    }
+>>>>>>> Stashed changes
     if(e.target.closest("input,textarea,select,dialog")||state.view!=="runs"||!state.draft||state.switching)return;
     const key=e.key.toLowerCase();
     const actions={"delete":deleteCurrentBox," ":togglePlay,"arrowleft":()=>seek(state.frame-(e.shiftKey?CONFIG.frameStep:1)),"arrowright":()=>seek(state.frame+(e.shiftKey?CONFIG.frameStep:1)),
       "[":()=>setBound("start_frame",state.frame),"]":()=>setBound("end_frame",state.frame),"b":()=>setTool("box"),"d":()=>setTool("direction")};
     if(actions[key]){e.preventDefault();safely(actions[key]);}
   });
+<<<<<<< Updated upstream
   window.addEventListener("beforeunload",e=>{if(state.dirty||state.saving||state.dancePending){e.preventDefault();e.returnValue="";}});
+=======
+  window.addEventListener("beforeunload",e=>{if(state.dirty||state.saving||state.dancePending||state.reviewSaving){e.preventDefault();e.returnValue="";}});
+>>>>>>> Stashed changes
   window.addEventListener("resize",()=>{if(state.view==="comb")drawComb();});
 }
 async function init() {
@@ -1218,7 +1457,7 @@ async function init() {
     saveStatus("Server restart required", "error");
     throw new Error("Restart the annotation server and refresh this page to load the run-switching and Delete box update.");
   }
-  if (project.annotation_api_version !== 5) {
+  if (project.annotation_api_version !== 7) {
     $("frame-loading").hidden = true;
     saveStatus("Server restart required", "error");
     throw new Error("The running annotation server is outdated. Stop it, start python -m annotation_tool again, and refresh this page.");
@@ -1227,10 +1466,19 @@ async function init() {
     throw new Error("Restart the annotation server and refresh this page to load dataset box settings.");
   }
   state.project=project;
+<<<<<<< Updated upstream
   renderBoxSettings();
   if(!state.project.clips.length) {
     $("frame-loading").hidden = true;
     renderRunList();saveStatus("Choose project folders");openFolders();return;
+=======
+  await safely(loadSharedReview);
+  renderReview();
+  renderBoxSettings();
+  if(!state.project.clips.length) {
+    $("frame-loading").hidden = true;
+    renderRunList();saveStatus("Choose project folders");if(state.clipReview) await setView("review");else openFolders();return;
+>>>>>>> Stashed changes
   }
   await selectRun(restoredRun(state.project));
   saveStatus("All changes saved");

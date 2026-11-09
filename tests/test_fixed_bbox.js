@@ -69,7 +69,7 @@ gesture(40,30,60,50);
 same(state.draft.keyframes[0].bbox, [10,10,60,50], 'Free corner resize remains available');
 gesture(25,25,30,30);
 same(state.draft.keyframes[0].bbox, [15,15,65,55], 'Free box movement remains available');
-state.tool = 'direction'; state.fixedBbox = true;
+state.tool = 'direction'; state.draft.direction_mode = 'manual'; state.fixedBbox = true;
 gesture(30,30,50,30);
 check(state.draft.direction_deg === 90, 'Direction tool still works in fixed mode');
 `, {
