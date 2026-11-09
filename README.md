@@ -116,3 +116,7 @@ exported.
 
 **Shortcuts:** **Space** play/pause · **←/→** one frame · **Shift+←/→** ten frames ·
 **[ / ]** run start/end · **B / D** box/direction tool · **Ctrl/Cmd+S** save.
+
+## License
+
+[MIT](LICENSE) © 2026 Vojtěch Vondráček.
