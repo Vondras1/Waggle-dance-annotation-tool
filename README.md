@@ -139,15 +139,63 @@ Keyboard controls: **←/→** step a frame, **Shift+←/→** step ten frames,
 **Space** play/pause, **B** box mode, **D** direction mode, and **Ctrl/Cmd+S**
 save.
 
-## Group runs into dances - Not fully finished
+## 02 Run / no run: review pipeline detections
+
+**01 Run review** retains the detailed box, interval, direction, and export workflow
+described above. **02 Run / no run** reviews completed pipeline detections without
+requiring hand-drawn boxes. Open the pipeline output folder there (containing
+`metadata.json`, `runs.json`, and `frames.jsonl`). The configured default is
+`deepwdt/runs/rosbag/2026-09-07T14`; change `DEFAULT_PIPELINE_DIR` in `config.py`
+or choose another folder in step 02.
+
+Existing `review/labels.json` and prepared review videos are reused. Choose
+**Run**, **No run**, or **Unsure**, or press **1**, **2**, or **3**. Labels save
+immediately in the existing format. Arrow keys navigate detections; automatic
+advance can be disabled. Filters show each label or unreviewed detections.
+**Open / reload** refreshes labels changed in the original review tool. Concurrent
+edits are checked before saving; reload after a conflict.
+
+To open a pipeline session at startup:
+
+```bash
+python3 -m annotation_tool --pipeline-dir deepwdt/runs/rosbag/2026-09-07T14
+```
+
+Missing review videos must first be prepared using the existing pipeline review
+exporter (`python -m src.run_review <pipeline-folder>` from `deepwdt`). The workspace
+uses its default two-second context clips. Detector boxes and angles remain
+predictions; these clips contain review overlays and are not used for YOLO export.
+
+## 03 Dances: connect related runs
+
+Choose **02 · Pipeline runs** in the **Source** selector to group detections labeled
+**Run**, or **01 · Annotated runs** for the original hand-annotated runs.
+Pipeline trajectories use the saved full-resolution undistorted detector boxes
+and source timestamps. Time filters use those source timestamps, in seconds.
+Double-click a run in the list to watch its review clip in step 02.
+
+Select related runs, name the dance, and use **Group selected runs** or add them
+to an existing dance. Edit dance names, notes, and uncertainty on their cards.
+Pipeline memberships save to `review/dances.json`, with the source prediction
+fingerprint, independently of the detailed annotation master and existing labels.
+Remove a run from its dance before changing its label away from Run.
+**Download dances JSON** exports the selected source's dance data (including
+pipeline trajectories and labels for pipeline projects).
 
 The full-comb view shows accepted runs in original image coordinates. Select
 related runs and assign them to a named dance. A run can belong to one dance.
 Each dance has a distinct color shared by all its runs' arrows, trajectories, and
 run labels. Ungrouped runs share a separate color. Selected runs keep their dance
-colors and gain thicker strokes. **Show only this dance**
-on a dance card filters the comb and run list to its members. Only one dance can
-be shown at a time; uncheck it to show all dances again. Time filters still apply.
+colors and gain thicker strokes. Check **Show this dance** on one or more cards
+to display their combined members in the comb and run list. Clear all checks or
+click **Show all dances** to show all runs again. Time filters still apply.
+
+To merge dances, check **Select for merge** on two or more cards, choose the
+existing dance name to keep in **Merge into**, then click **Merge selected dances**.
+The chosen dance keeps its ID and name, takes all selected dances' runs and notes,
+and stays uncertain if any selected dance was uncertain. Other selected dance
+cards are replaced by the merged dance. Display filters follow the merged dance.
+Merging works for both manually annotated runs and pipeline detections.
 
 For a comb-image background, provide an undistorted full-resolution image:
 
@@ -180,4 +228,5 @@ node annotation_tool/tests/test_box_deletion.js
 node annotation_tool/tests/test_fixed_bbox.js
 node annotation_tool/tests/test_uncertain_run.js
 node annotation_tool/tests/test_boundary_intervals.js
+node annotation_tool/tests/test_dances.js
 ```

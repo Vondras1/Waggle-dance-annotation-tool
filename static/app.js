@@ -10,7 +10,8 @@ const fmt = value => Number(value).toFixed(3);
 const state = {project: null, id: null, draft: null, frame: 0, loadedFrame: -1,
   image: null, playbackRate: 1, imageToken: 0, tool: "box", drag: null, dirty: false, version: 0,
   saving: null, timer: null, conflict: false, playing: false, playToken: 0,
-  view: "runs", switching: false, selected: new Set(), combImage: null, combPoints: [], dancePending: 0, danceFilter: null,
+  pipeline: null, pipelineId: null, pipelineSaving: false, danceSource: "annotations",
+  view: "runs", switching: false, selected: new Set(), combImage: null, combPoints: [], dancePending: 0, danceFilters: new Set(), mergeSelection: new Set(), mergingDances: false,
   brightness: 100, histogramContrast: 0, enhancedFrameCache: null,
   boxSettingsKey: null, bboxSize: 64, fixedBbox: false};
 let danceQueue = Promise.resolve();
@@ -795,6 +796,80 @@ function endDrag(event) {
   }
 }
 
+
+function danceProject() {
+  return state.danceSource === "pipeline" ? state.pipeline || {clips:[], dances:[], comb:{available:false,message:"Open a pipeline folder in 02."}} : state.project;
+}
+function danceMember(id) { return danceProject().dances.find(d => d.run_ids.includes(id)); }
+async function reviewDanceRun(id) {
+  if (state.danceSource === "pipeline") { selectPipeline(id);await setView("review"); }
+  else { await setView("runs");await selectRun(id); }
+}
+function pipelinePayload(extra) {
+  return {root: state.pipeline.root, revision: state.pipeline.revision, labels_token:state.pipeline.labels_token, ...extra};
+}
+function pipelineRuns() {
+  const filter = $("pipeline-filter").value;
+  return (state.pipeline?.clips || []).filter(c => filter === "all" || (filter === "unreviewed" ? !c.label : c.label === filter));
+}
+async function openPipeline(event) {
+  event.preventDefault();
+  if (state.pipelineSaving) return;
+  await danceQueue.catch(() => {});
+  $("pipeline-open").disabled = true;
+  try {
+    const project = await (await api("/api/pipeline/open", "POST", {root:$("pipeline-folder").value})).json();
+    state.pipeline = project;state.selected.clear();state.danceFilters.clear();state.mergeSelection.clear();
+    state.danceSource = "pipeline";$("dance-source").value = "pipeline";
+    state.pipelineId = project.clips.find(c => !c.label)?.id || project.clips[0]?.id;
+    renderPipeline();selectPipeline(state.pipelineId);
+    toast("Existing pipeline labels loaded.");
+  } finally { $("pipeline-open").disabled = false; }
+}
+function renderPipeline() {
+  const project = state.pipeline, list = $("pipeline-list");
+  list.replaceChildren();
+  $("pipeline-location").textContent = project ? `Labels: ${project.label_path}` : "";
+  $("pipeline-progress").textContent = project ? `${project.clips.filter(c => c.label).length} / ${project.clips.length} reviewed` : "";
+  for (const c of pipelineRuns()) {
+    const label = {yes:"Run",no:"No run",uncertain:"Unsure"}[c.label] || "Unreviewed";
+    const node = button(`${runLabel(c)} · ${fmt(c.metadata.run.start_time_s)} s · ${label}`, `run-card${c.id === state.pipelineId ? " selected" : ""}`, () => selectPipeline(c.id));
+    node.disabled = state.pipelineSaving;
+    list.append(node);
+  }
+  const clip = project?.clips.find(c => c.id === state.pipelineId);
+  $("pipeline-title").textContent = clip ? `${runLabel(clip)} · ${fmt(clip.metadata.run.start_time_s)} – ${fmt(clip.metadata.run.end_time_s)} s` : "Select a detection";
+  $("pipeline-video-help").textContent = clip && !clip.ready ? "Review video has not been prepared. Run the existing deepwdt run_review exporter, then Open / reload." : "";
+  for (const label of ["yes","no","uncertain"]) {
+    $("pipeline-"+label).disabled = !clip?.ready || state.pipelineSaving;
+    $("pipeline-"+label).setAttribute("aria-pressed", String(clip?.label === label));
+  }
+}
+function selectPipeline(id) {
+  if (state.pipelineSaving) return;
+  const clip = state.pipeline?.clips.find(c => c.id === id);
+  state.pipelineId = clip?.id || null;
+  const video = $("pipeline-video");video.pause();
+  if (clip?.ready) video.src = `/api/pipeline/video/${encodeURIComponent(clip.id)}?root=${encodeURIComponent(state.pipeline.root)}&project_id=${encodeURIComponent(state.project.project_id)}`;
+  else {video.removeAttribute("src");video.load();}
+  renderPipeline();
+}
+function navigatePipeline(delta) {
+  const runs = pipelineRuns(), index = runs.findIndex(c => c.id === state.pipelineId);
+  if (runs[index+delta]) selectPipeline(runs[index+delta].id);
+}
+async function labelPipeline(label) {
+  if (!state.pipelineId || state.pipelineSaving) return;
+  const id = state.pipelineId;
+  const runs = pipelineRuns(), next = runs[runs.findIndex(c => c.id === id)+1];
+  state.pipelineSaving = true;renderPipeline();
+  try {
+    state.pipeline = await (await api("/api/pipeline", "PUT", pipelinePayload({run_id:Number(id), label}))).json();
+    saveStatus("Label saved");
+  } finally { state.pipelineSaving = false;renderPipeline(); }
+  if ($("pipeline-auto-next").checked && next) selectPipeline(next.id);
+}
+
 async function setView(view) {
   pause();
   await danceQueue.catch(() => {});
@@ -802,13 +877,16 @@ async function setView(view) {
   state.view = view;
   $("runs-view").hidden = view !== "runs";
   $("comb-view").hidden = view !== "comb";
-  for (const name of ["runs", "comb"]) {
+  $("review-view").hidden = view !== "review";
+  $("pipeline-video").pause();
+  for (const name of ["runs", "review", "comb"]) {
     $("tab-"+name).classList.toggle("active", view === name);
     $("tab-"+name).setAttribute("aria-selected", String(view === name));
   }
+  if (view === "review") selectPipeline(state.pipelineId);
   if (view === "comb") {
     renderComb(); renderDances();
-    if (!state.combImage && state.project.comb.available) {
+    if (state.danceSource === "annotations" && !state.combImage && state.project.comb.available) {
       const image = new Image();
       image.onload = () => { state.combImage = image; drawComb(); };
       image.onerror = () => error("The full-comb background could not be loaded. Run coordinates remain available.");
@@ -816,53 +894,108 @@ async function setView(view) {
     }
   }
 }
+function pruneDanceSelections() {
+  const ids = new Set(danceProject().dances.map(d => d.id));
+  for (const selection of [state.danceFilters, state.mergeSelection]) {
+    for (const id of selection) if (!ids.has(id)) selection.delete(id);
+  }
+}
+function renderMergeControls() {
+  const target = $("merge-dance-target"), previous = target.value;
+  target.replaceChildren();
+  const dances = danceProject().dances.filter(d => state.mergeSelection.has(d.id));
+  for (const dance of dances) {
+    const option = el("option", dance.name || dance.id);option.value = dance.id;target.append(option);
+  }
+  if (dances.some(d => d.id === previous)) target.value = previous;
+  target.disabled = state.mergingDances || dances.length < 2;
+  $("merge-dances").disabled = state.mergingDances || dances.length < 2;
+  $("merge-dance-count").textContent = `${dances.length} dances selected for merge`;
+  $("show-all-dances").disabled = !state.danceFilters.size;
+}
+function mergedDances(dances, ids, targetId) {
+  const selected = new Set(ids), sources = dances.filter(d => selected.has(d.id));
+  if (selected.size < 2 || sources.length !== selected.size || !selected.has(targetId)) {
+    throw new Error("Select at least two existing dances and choose which name to keep.");
+  }
+  const target = sources.find(d => d.id === targetId);
+  return dances.filter(d => !selected.has(d.id) || d.id === targetId).map(d => d.id !== targetId ? d : {
+    ...target,
+    run_ids: [...new Set(sources.flatMap(source => source.run_ids))],
+    notes: [...new Set([target, ...sources.filter(source => source.id !== targetId)]
+      .map(source => source.notes || "").filter(note => note.trim()))].join("\n\n"),
+    uncertain: sources.some(source => source.uncertain),
+  });
+}
+async function mergeSelectedDances() {
+  if (state.mergingDances) return;
+  const ids = [...state.mergeSelection], targetId = $("merge-dance-target").value;
+  // Validate before starting the save; the queued transform validates again.
+  mergedDances(danceProject().dances, ids, targetId);
+  const wasVisible = ids.some(id => state.danceFilters.has(id));
+  state.mergingDances = true;renderDances();
+  try {
+    await saveDances(dances => mergedDances(dances, ids, targetId));
+    if (wasVisible) state.danceFilters.add(targetId);
+    state.mergeSelection.clear();
+    renderComb();toast(`${ids.length} dances merged. All runs and notes kept.`);
+  } finally { state.mergingDances = false;renderDances(); }
+}
+
 function visibleRuns() {
-  const dance = state.project.dances.find(d => d.id === state.danceFilter);
-  if (!dance) state.danceFilter = null;
+  pruneDanceSelections();
+  const dances = danceProject().dances.filter(d => state.danceFilters.has(d.id));
+  const members = new Set(dances.flatMap(d => d.run_ids));
   const from = $("comb-time-start").value === "" ? -Infinity : Number($("comb-time-start").value);
   const to = $("comb-time-end").value === "" ? Infinity : Number($("comb-time-end").value);
-  return state.project.clips.filter(c => c.annotation.status === "accepted" && c.frames.length &&
-    (!dance || dance.run_ids.includes(c.id)) &&
+  return danceProject().clips.filter(c => c.annotation.status === "accepted" && c.frames.length &&
+    (!dances.length || members.has(c.id)) &&
     c.frames[c.frames.length-1].source_time_s >= from && c.frames[0].source_time_s <= to &&
-    (!$("comb-ungrouped").checked || !memberDance(c.id)));
+    (!$("comb-ungrouped").checked || !danceMember(c.id)));
 }
 function runColor(id) {
   // Use the full dance list so filtering and selection preserve shared dance colors.
-  const index = state.project.dances.findIndex(d => d.run_ids.includes(id));
+  const index = danceProject().dances.findIndex(d => d.run_ids.includes(id));
   if (index < 0) return CONFIG.ungroupedRunColor;
   const palette = ["#56b4ff", "#ff9f43", "#e879f9", "#5ee38b", "#ffe45e",
     "#ff6b7a", "#45e0df", "#b49aff", "#f5f5f5", "#c5dc65"];
   return palette[index] || `hsl(${((index * 137.508) % 360).toFixed(3)} 85% 68%)`;
 }
 function filterDance(id) {
-  state.danceFilter = state.danceFilter === id ? null : id;
-  if (state.danceFilter) $("comb-ungrouped").checked = false;
+  if (state.danceFilters.has(id)) state.danceFilters.delete(id); else state.danceFilters.add(id);
+  if (state.danceFilters.size) $("comb-ungrouped").checked = false;
   renderComb(); renderDances();
 }
 function renderComb() {
   const runs = visibleRuns();
-  const validIds = new Set(state.project.clips.filter(c => c.annotation.status === "accepted").map(c => c.id));
+  $("comb-caption").textContent = state.danceSource === "pipeline"
+    ? "Click a trajectory to toggle selection. Arrows show detector directions; double-click a run in the list to watch it."
+    : "Click a trajectory to toggle selection. Arrows show annotated run directions.";
+  $("dance-footer").textContent = state.danceSource === "pipeline"
+    ? "Each run belongs to at most one dance. Memberships save in review/dances.json. Detector trajectories remain predictions."
+    : "Each accepted run belongs to at most one dance. Master JSON includes dance memberships and original coordinates.";
+  const validIds = new Set(danceProject().clips.filter(c => c.annotation.status === "accepted").map(c => c.id));
   state.selected = new Set([...state.selected].filter(id => validIds.has(id)));
   $("comb-count").textContent = `${runs.length} accepted runs visible`;
   $("selection-count").textContent = `${state.selected.size} RUN${state.selected.size === 1 ? "" : "S"} SELECTED`;
   const hiddenSelections = [...state.selected].filter(id => !runs.some(c => c.id === id)).length;
   if (hiddenSelections) $("selection-count").textContent += ` · ${hiddenSelections} outside filter`;
   $("create-dance").disabled = !state.selected.size;
-  $("add-to-dance").disabled = !state.selected.size || !state.project.dances.length;
-  $("comb-message").textContent = state.project.comb.available ? "Static calibrated comb background · coordinates in the full-resolution undistorted image." : `${state.project.comb.message} Showing a coordinate canvas.`;
-  $("comb-message").className = `comb-message${state.project.comb.available ? "" : " fallback"}`;
+  $("add-to-dance").disabled = !state.selected.size || !danceProject().dances.length;
+  $("comb-message").textContent = danceProject().comb.available ? "Static calibrated comb background · coordinates in the full-resolution undistorted image." : `${danceProject().comb.message} Showing a coordinate canvas.`;
+  $("comb-message").className = `comb-message${danceProject().comb.available ? "" : " fallback"}`;
   $("comb-run-list").replaceChildren();
   for (const c of runs) {
-    const dance = memberDance(c.id);
+    const dance = danceMember(c.id);
     const node = button(`${runLabel(c)} · ${fmt(c.frames[0].source_time_s)} s${dance ? " · "+dance.name : ""}`,
       `comb-run-chip${state.selected.has(c.id) ? " selected" : ""}`, () => toggleSelection(c.id));
     node.setAttribute("aria-pressed", String(state.selected.has(c.id)));
     node.style.setProperty("--run-color", runColor(c.id));
     node.title = "Click to toggle selection; double-click to review this run";
-    node.addEventListener("dblclick", () => safely(async () => { await setView("runs"); await selectRun(c.id); }));
+    node.addEventListener("dblclick", () => safely(async () => { await reviewDanceRun(c.id); }));
     $("comb-run-list").append(node);
   }
-  if (!runs.length) $("comb-run-list").append(el("p", "Accept annotated runs in Run review to see them here. Adjust time filters if needed.", "empty-state"));
+  if (!runs.length) $("comb-run-list").append(el("p", "No runs match. Accept runs in 01 or label detections Run in 02, choose the source above, and check time filters.", "empty-state"));
   drawComb();
 }
 function toggleSelection(id) {
@@ -870,14 +1003,14 @@ function toggleSelection(id) {
   renderComb();
 }
 function drawComb() {
-  if (!state.project) return;
-  const canvas = $("comb-canvas"), info = state.project.comb;
-  const width = info.width || Math.max(CONFIG.combWidth, ...state.project.clips.map(c => c.metadata.run.bbox_x_max_px));
-  const height = info.height || Math.max(CONFIG.combHeight, ...state.project.clips.map(c => c.metadata.run.bbox_y_max_px));
+  if (!danceProject()) return;
+  const canvas = $("comb-canvas"), info = danceProject().comb;
+  const width = info.width || Math.max(CONFIG.combWidth, ...danceProject().clips.map(c => c.metadata.run.bbox_x_max_px));
+  const height = info.height || Math.max(CONFIG.combHeight, ...danceProject().clips.map(c => c.metadata.run.bbox_y_max_px));
   if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = CONFIG.combBackground; ctx.fillRect(0,0,width,height);
-  if (state.combImage) {
+  if (state.combImage && state.danceSource === "annotations") {
     ctx.drawImage(state.combImage, 0,0,width,height);
     ctx.fillStyle = CONFIG.combDimOverlay; ctx.fillRect(0,0,width,height);
   } else {
@@ -912,10 +1045,14 @@ function saveDances(transform) {
   saveStatus("Saving dance…");
   const action = async () => {
     await saveRun();
-    const dances = clone(state.project.dances);
+    const dances = clone(danceProject().dances);
     const result = transform(dances) || dances;
-    const response = await api("/api/dances", "PUT", {dances:result, revision:state.project.revision});
-    state.project = await response.json();
+    if (state.danceSource === "pipeline") {
+      state.pipeline = await (await api("/api/pipeline", "PUT", pipelinePayload({dances: result}))).json();
+    } else {
+      const response = await api("/api/dances", "PUT", {dances:result, revision:state.project.revision});
+      state.project = await response.json();
+    }
     saveStatus("All changes saved");
     renderComb(); renderDances(); renderRunList();
   };
@@ -926,12 +1063,15 @@ function saveDances(transform) {
   return danceQueue;
 }
 function renderDances() {
+  pruneDanceSelections();
+  renderMergeControls();
+  $("dance-save-location").textContent = state.danceSource === "pipeline" ? state.pipeline?.dance_path || "Open a pipeline folder in 02." : state.project.master_path;
   const list = $("dance-list"), target = $("dance-target"), previous = target.value;
   list.replaceChildren(); target.replaceChildren(el("option", "Choose a dance…"));target.firstChild.value="";
-  $("dance-count").textContent = state.project.dances.length;
-  for (const dance of state.project.dances) {
+  $("dance-count").textContent = danceProject().dances.length;
+  for (const dance of danceProject().dances) {
     const option = el("option", dance.name || dance.id);option.value=dance.id;target.append(option);
-    const card = el("div", undefined, `dance-card${state.danceFilter === dance.id ? " active" : ""}`);
+    const card = el("div", undefined, `dance-card${state.danceFilters.has(dance.id) ? " active" : ""}`);
     const heading = el("div", undefined, "dance-card-heading");
     const name = el("input");name.value=dance.name;name.maxLength=CONFIG.danceNameMaxLength;name.setAttribute("aria-label", "Dance name");
     name.addEventListener("change", () => safely(() => saveDances(ds => {ds.find(d=>d.id===dance.id).name=name.value;})));
@@ -941,9 +1081,17 @@ function renderDances() {
     }));
     heading.lastChild.setAttribute("aria-label", "Delete dance");
     card.append(heading);
+    const mergeLabel = el("label", undefined, "checkbox-field"), merge = el("input");
+    merge.type = "checkbox";merge.checked = state.mergeSelection.has(dance.id);
+    merge.disabled = state.mergingDances;
+    merge.addEventListener("change", () => {
+      if (merge.checked) state.mergeSelection.add(dance.id); else state.mergeSelection.delete(dance.id);
+      renderMergeControls();
+    });
+    mergeLabel.append(merge, el("span", "Select for merge"));card.append(mergeLabel);
     const members = el("div", undefined, "dance-members");
     for (const id of dance.run_ids) {
-      const clip = state.project.clips.find(c=>c.id===id), member=el("span",undefined,"dance-member");
+      const clip = danceProject().clips.find(c=>c.id===id), member=el("span",undefined,"dance-member");
       member.style.setProperty("--run-color", runColor(id));
       member.append(button(runLabel(clip), "", () => toggleSelection(id)),
         button("×", "", () => saveDances(ds => ds.map(d=>d.id===dance.id ? {...d,run_ids:d.run_ids.filter(r=>r!==id)} : d).filter(d=>d.run_ids.length))));
@@ -953,9 +1101,13 @@ function renderDances() {
     }
     card.append(members);
     const filterLabel = el("label",undefined,"checkbox-field"), filter=el("input");
-    filter.type="checkbox";filter.checked=state.danceFilter === dance.id;
+    filter.type="checkbox";filter.checked=state.danceFilters.has(dance.id);
     filter.addEventListener("change",()=>filterDance(dance.id));
-    filterLabel.append(filter,el("span","Show only this dance"));card.append(filterLabel);
+    filterLabel.append(filter,el("span","Show this dance"));card.append(filterLabel);
+    const uncertainLabel=el("label",undefined,"checkbox-field"), uncertain=el("input");
+    uncertain.type="checkbox";uncertain.checked=dance.uncertain;
+    uncertain.addEventListener("change",()=>safely(()=>saveDances(ds=>{ds.find(d=>d.id===dance.id).uncertain=uncertain.checked;})));
+    uncertainLabel.append(uncertain,el("span","Unsure about this dance"));card.append(uncertainLabel);
     const notes=el("textarea");notes.value=dance.notes;notes.placeholder="Dance notes…";notes.rows=2;notes.setAttribute("aria-label","Dance notes");
     notes.addEventListener("change",()=>safely(()=>saveDances(ds=>{ds.find(d=>d.id===dance.id).notes=notes.value;})));
     card.append(notes,button("Select all members","text-button",()=>{state.selected=new Set(dance.run_ids);renderComb();}));
@@ -970,10 +1122,10 @@ async function groupSelection(existing = false) {
   const target = existing ? $("dance-target").value : null;
   if (existing && !target) throw new Error("Choose a dance first.");
   for (const id of ids) {
-    const dance=memberDance(id);
+    const dance=danceMember(id);
     if (dance && dance.id !== target) throw new Error(`Run ${id} already belongs to ${dance.name}. Remove its existing membership first.`);
   }
-  const name = $("dance-name").value.trim() || `Dance ${String(state.project.dances.length+1).padStart(2,"0")}`;
+  const name = $("dance-name").value.trim() || `Dance ${String(danceProject().dances.length+1).padStart(2,"0")}`;
   await saveDances(ds => {
     if (existing) { const d=ds.find(d=>d.id===target);d.run_ids=[...new Set([...d.run_ids,...ids])]; }
     else ds.push({id:`dance_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`,name,run_ids:ids,notes:"",uncertain:false});
@@ -1034,7 +1186,7 @@ async function changeFolders(event) {
     state.imageToken++;state.playToken++;
     state.project = project;state.id = null;state.draft = null;
     state.image = null;state.loadedFrame = -1;state.combImage = null;
-    state.dirty = false;state.conflict = false;state.selected.clear();state.danceFilter = null;
+    state.dirty = false;state.conflict = false;state.selected.clear();state.danceFilters.clear();state.mergeSelection.clear();
     $("run-search").value = "";$("run-filter").value = "all";
     $("comb-time-start").value = "";$("comb-time-end").value = "";$("comb-ungrouped").checked = false;
     $("save-confirmation").textContent = "";$("error-banner").hidden = true;
@@ -1126,6 +1278,25 @@ function bindEvents() {
   on("folders-form", "submit", changeFolders);
   on("error-dismiss","click",()=>{$("error-banner").hidden=true;});
   on("run-search","input",renderRunList);on("run-filter","change",renderRunList);
+  on("tab-review", "click", () => setView("review"));
+  on("pipeline-form", "submit", openPipeline);
+  on("pipeline-filter", "change", renderPipeline);
+  on("pipeline-previous", "click", () => navigatePipeline(-1));
+  on("pipeline-next", "click", () => navigatePipeline(1));
+  for (const label of ["yes", "no", "uncertain"]) on("pipeline-"+label, "click", () => labelPipeline(label));
+  on("dance-source", "change", async e => {
+    const source = e.target.value;
+    await danceQueue.catch(() => {});
+    state.danceSource = source;state.selected.clear();state.danceFilters.clear();state.mergeSelection.clear();
+    renderComb();renderDances();
+  });
+  on("merge-dances", "click", mergeSelectedDances);
+  on("show-all-dances", "click", () => { state.danceFilters.clear();$("comb-ungrouped").checked = false;renderComb();renderDances(); });
+  on("dance-download", "click", async () => {
+    await danceQueue;
+    const project = danceProject();
+    download(new Blob([JSON.stringify(state.danceSource === "pipeline" ? project : {dances: project.dances}, null, 2)], {type:"application/json"}), "dances.json");
+  });
   on("tab-runs","click",()=>setView("runs"));on("tab-comb","click",()=>setView("comb"));
   on("help-open","click",()=>$("help-dialog").showModal());on("export-open","click",()=>{$("export-state").textContent="";$("export-dialog").showModal();});
   on("export-download","click",exportYolo);on("reload-clips","click",reloadProject);
@@ -1178,7 +1349,7 @@ function bindEvents() {
   on("frame-canvas","pointercancel",()=>{state.drag=null;drawFrame();});
   for(const id of ["comb-time-start","comb-time-end"])on(id,"change",renderComb);
   on("comb-ungrouped","change",()=>{
-    if ($("comb-ungrouped").checked) state.danceFilter = null;
+    if ($("comb-ungrouped").checked) state.danceFilters.clear();
     renderComb(); renderDances();
   });
   on("comb-select-visible","click",()=>{visibleRuns().forEach(c=>state.selected.add(c.id));renderComb();});
@@ -1193,13 +1364,18 @@ function bindEvents() {
   });
   document.addEventListener("keydown",e=>{
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){e.preventDefault();safely(saveRun);return;}
+    if (state.view === "review" && !e.target.closest("input,textarea,select,dialog,video,button")) {
+      const labels = {"1":"yes", "2":"no", "3":"uncertain"};
+      if (labels[e.key]) { e.preventDefault();safely(() => labelPipeline(labels[e.key])); }
+      if (["ArrowLeft", "ArrowRight"].includes(e.key)) { e.preventDefault();navigatePipeline(e.key === "ArrowLeft" ? -1 : 1); }
+    }
     if(e.target.closest("input,textarea,select,dialog")||state.view!=="runs"||!state.draft||state.switching)return;
     const key=e.key.toLowerCase();
     const actions={"delete":deleteCurrentBox," ":togglePlay,"arrowleft":()=>seek(state.frame-(e.shiftKey?CONFIG.frameStep:1)),"arrowright":()=>seek(state.frame+(e.shiftKey?CONFIG.frameStep:1)),
       "[":()=>setBound("start_frame",state.frame),"]":()=>setBound("end_frame",state.frame),"b":()=>setTool("box"),"d":()=>setTool("direction")};
     if(actions[key]){e.preventDefault();safely(actions[key]);}
   });
-  window.addEventListener("beforeunload",e=>{if(state.dirty||state.saving||state.dancePending){e.preventDefault();e.returnValue="";}});
+  window.addEventListener("beforeunload",e=>{if(state.dirty||state.saving||state.dancePending||state.pipelineSaving){e.preventDefault();e.returnValue="";}});
   window.addEventListener("resize",()=>{if(state.view==="comb")drawComb();});
 }
 async function init() {
@@ -1227,10 +1403,14 @@ async function init() {
     throw new Error("Restart the annotation server and refresh this page to load dataset box settings.");
   }
   state.project=project;
+  state.pipeline = await (await api("/api/pipeline")).json();
+  $("pipeline-folder").value = state.pipeline?.root || project.pipeline_default || "";
+  if (state.pipeline) { state.danceSource = "pipeline";$("dance-source").value = "pipeline";state.pipelineId = state.pipeline.clips.find(c => !c.label)?.id || state.pipeline.clips[0]?.id; }
+  renderPipeline();
   renderBoxSettings();
   if(!state.project.clips.length) {
     $("frame-loading").hidden = true;
-    renderRunList();saveStatus("Choose project folders");openFolders();return;
+    renderRunList();saveStatus("Choose project folders");if(state.pipeline) await setView("review");else openFolders();return;
   }
   await selectRun(restoredRun(state.project));
   saveStatus("All changes saved");

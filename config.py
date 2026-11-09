@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent
 STATIC = ROOT / "static"
 # Choose a dataset here. Paths and square side lengths (clip pixels) live together.
-DEFAULT_DATASET = "prague_2026-09-03T11"
+DEFAULT_DATASET = "example_dataset"
 DATASETS = {
     "example_dataset": {
         "clips_dir": ROOT / "guide" / "example_dataset" / "run_clips",
@@ -27,9 +27,18 @@ DATASETS = {
     "prague_2026-09-03T11": {
         "clips_dir": REPO / "dance_decoder/yowo_data/prague_2026-09-03T11_1000_2000" / "run_clips",
         "bbox_size": 70,
-    }
+    },
+    "prague_2026-09-12T11": {
+            "clips_dir": REPO / "dance_decoder/yowo_data/prague_2026-09-12T11_1000_2000_5" / "run_clips",
+        "bbox_size": 70,
+    },
+    "prague_2026-09-12T20": {
+            "clips_dir": REPO / "dance_decoder/yowo_data/prague_2026-09-12T20_1000_2000_night" / "run_clips",
+        "bbox_size": 70,
+    },
 
 }
+DEFAULT_PIPELINE_DIR = REPO / "deepwdt/runs/rosbag/2026-09-07T14"
 DEFAULT_CLIPS_DIR = DATASETS[DEFAULT_DATASET]["clips_dir"]
 # Compatibility for scripts that use the old list; no automatic path selection.
 CLIPS_DIR_CANDIDATES = tuple(dataset["clips_dir"] for dataset in DATASETS.values())

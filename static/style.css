@@ -69,3 +69,11 @@
 .boundary-help summary{cursor:pointer;width:fit-content}
 .boundary-help .field-help{margin-bottom:0}
 @media(max-width:1200px){.editor-section>.timeline-panel{grid-template-columns:86px minmax(0,1fr) 86px;gap:8px;padding:9px}.timeline-panel>.boundary-controls:first-child{padding-right:6px}.timeline-panel>.boundary-controls:last-child{padding-left:6px}.timeline-center .frame-jump,.timeline-center .speed-label{margin-left:0}}
+
+.pipeline-workspace{display:grid;grid-template-columns:260px minmax(0,1fr);min-height:calc(100vh - 82px)}
+.pipeline-open{grid-column:1/-1;padding:22px 30px;border-bottom:1px solid var(--line)}
+.pipeline-open form{display:flex;align-items:end;gap:14px;margin-top:14px}.pipeline-open label{flex:1}
+#pipeline-video{width:100%;max-height:60vh;background:#0a0e0a;border-radius:8px}
+#review-view .checkbox-field{margin-top:20px}#pipeline-list .run-card{width:100%}
+#dance-source{max-width:180px}#dance-save-location{overflow-wrap:anywhere}
+@media(max-width:760px){.pipeline-workspace{grid-template-columns:150px minmax(0,1fr)}.pipeline-open{padding:18px}.pipeline-open form{flex-wrap:wrap}}

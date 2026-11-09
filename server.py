@@ -14,6 +14,7 @@ import uuid
 
 from .media import CombImage, FrameReader
 from .model import MasterStore, discover_clips, yolo_rows
+from .pipeline import PipelineProject
 
 
 from . import config
@@ -45,6 +46,7 @@ class Application:
         self.comb = CombImage(self.clips, image_path=comb_image, bag_path=bag)
         self.lock = threading.RLock()
         self.project_id = uuid.uuid4().hex
+        self.pipeline = None
 
     def project(self):
         with self.lock:
@@ -56,7 +58,7 @@ class Application:
                 "angle_convention": master["angle_convention"],
                 "comb": self.comb.info(), "clips_dir": str(self.clips_dir),
                 "master_path": str(self.master_path),
-                "bbox_size": self.bbox_size,
+                "bbox_size": self.bbox_size, "pipeline_default": str(config.DEFAULT_PIPELINE_DIR),
                 "save_dir": str(self.master_path.parent), "project_id": self.project_id,
                 "supports_multiple_runs": True, "supports_box_exclusions": True,
                 "annotation_api_version": config.ANNOTATION_API_VERSION,
@@ -280,6 +282,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(self.app.project())
         elif path == "/api/master":
             self.send_json(self.app.store.get_master(), filename=config.MASTER_FILENAME)
+        elif path == "/api/pipeline":
+            self.send_json(self.app.pipeline.project() if self.app.pipeline else None)
+        elif path.startswith("/api/pipeline/video/"):
+            if self.app.pipeline is None:
+                raise ValueError("Open a pipeline folder first")
+            query = dict(parse_qsl(urlsplit(self.path).query))
+            if query.get('root') != str(self.app.pipeline.root):
+                raise ValueError('Pipeline folder changed; reload before watching')
+            video = self.app.pipeline.review.clip(int(path.rsplit('/', 1)[1]))
+            self.send_bytes(video.read_bytes(), 'video/mp4')
         elif path == "/api/comb":
             self.send_bytes(self.app.comb.get(), "image/jpeg")
         elif path.startswith("/api/frame/"):
@@ -303,6 +315,11 @@ class Handler(BaseHTTPRequestHandler):
         if not self.project_matches(payload):
             return
         with self.app.lock:
+            if path == "/api/pipeline":
+                if self.app.pipeline is None:
+                    raise ValueError("Open a pipeline folder first")
+                self.send_json(self.app.pipeline.save(payload))
+                return
             revision = payload.get("revision")
             if type(revision) is not int or revision != self.app.store.get_master()["revision"]:
                 self.send_json({"error": "Annotations changed in another window. Reload before saving."},
@@ -325,7 +342,15 @@ class Handler(BaseHTTPRequestHandler):
         payload = self.body()
         if not self.project_matches(payload):
             return
-        if path in ("/api/runs/add", "/api/runs/delete"):
+        if path == "/api/pipeline/open":
+            root = payload.get('root')
+            if not isinstance(root, str) or not root.strip():
+                raise ValueError('Pipeline output folder is required')
+            candidate = PipelineProject(Path(root).expanduser())
+            project = candidate.project()
+            self.app.pipeline = candidate
+            self.send_json(project)
+        elif path in ("/api/runs/add", "/api/runs/delete"):
             if payload.get("revision") != self.app.store.get_master()["revision"]:
                 self.send_json({"error": "Annotations changed. Reload before adding or deleting a run."}, status=409)
                 return
@@ -367,6 +392,8 @@ def main(argv=None):
                         help="Directory containing run_*.mp4 and matching JSON sidecars")
     parser.add_argument("--annotations", type=Path,
                         help="Master JSON path (default: sibling annotations/master.json)")
+    parser.add_argument("--pipeline-dir", type=Path,
+                        help="Completed pipeline folder with runs.json, frames.jsonl and review clips")
     parser.add_argument("--comb-image", type=Path,
                         help="Full-resolution undistorted comb image; otherwise read source ROS bag")
     parser.add_argument("--bag", type=Path, help="Override source bag path for the comb background")
@@ -377,6 +404,8 @@ def main(argv=None):
     app = None
     try:
         app = Application(args.clips_dir, args.annotations, comb_image=args.comb_image, bag=args.bag, allow_empty=True)
+        if args.pipeline_dir:
+            app.pipeline = PipelineProject(args.pipeline_dir)
         print(f"Loaded {len(app.clips)} run clips from {app.clips_dir}", flush=True)
         print("Preparing full-comb background…", flush=True)
         comb = app.comb.info()
