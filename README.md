@@ -61,7 +61,7 @@ Use **+ Add run** for multiple runs in one clip and **Save clip & next** to cont
 <details open>
 <summary>Annotated controls — Run review (click to enlarge)</summary>
 
-[![Run review controls](guide/annotated/01-run-review.png)](guide/annotated/full/01-run-review.png)
+[![Run review controls](guide/annotated/01-run-review.png)](guide/annotated/01-run-review.png)
 
 </details>
 
